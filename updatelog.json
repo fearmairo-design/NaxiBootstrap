@@ -1,0 +1,11 @@
+[
+  {
+    "version": "v1.1.0",
+    "date": null,
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Updated UI" },
+      { "type": "+", "text": "Update log" },
+      { "type": "~", "text": "Bug fix" }
+    ]
+  }
