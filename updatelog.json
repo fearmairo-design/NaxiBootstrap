@@ -1,8 +1,16 @@
 [
   {
-    "version": "v1.5.0",
+    "version": "v1.5.1",
     "date": null,
     "new": true,
+    "changes": [
+      { "type": "+", "text": "Launcher closes when Roblox opens" }
+    ]
+  },
+  {
+    "version": "v1.5.0",
+    "date": null,
+    "new": false,
     "changes": [
       { "type": "~", "text": "Completely new design" },
       { "type": "~", "text": "Redesigned buttons and pages" },
