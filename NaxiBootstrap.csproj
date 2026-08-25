@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <AssemblyTitle>Naxi Bootstrap</AssemblyTitle>
+    <Product>Naxi Bootstrap</Product>
+    <Company>Naxi Studios</Company>
+    <Copyright>© 2026 Naxi Studios. All rights reserved.</Copyright>
+    <FileVersion>1.4.0</FileVersion>
+    <AssemblyVersion>1.4.0</AssemblyVersion>
+    <InformationalVersion>1.4.0</InformationalVersion>
+    <DebugType Condition="'$(Configuration)'=='Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)'=='Release'">false</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="updatelog.json" CopyToOutputDirectory="PreserveNewest"/>
+    <Resource Include="icon.ico"/>
+    <EmbeddedResource Include="license\LICENSE.md"/>
+    <EmbeddedResource Include="license\PRIVACY_POLICY.md"/>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0"/>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15"/>
+  </ItemGroup>
+</Project>
