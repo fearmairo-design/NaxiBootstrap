@@ -18,5 +18,15 @@
       { "type": "+", "text": "Animations" },
       { "type": "~", "text": "Bug fix" }
     ]
-  }
+  },
+  {
+    "version": "v1.3.0",
+    "date": null,
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Updated UI" },
+      { "type": "+", "text": "Added License" },
+      { "type": "~", "text": "Bugs fixed" }
+    ]
+  }  
 ]
