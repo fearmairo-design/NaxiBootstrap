@@ -1,8 +1,18 @@
 [
   {
-    "version": "v1.5.2",
+    "version": "v1.5.3",
     "date": null,
     "new": true,
+    "changes": [
+      { "type": "+", "text": "Account switching now works correctly" },
+      { "type": "+", "text": "Launch button uses last selected account" },
+      { "type": "+", "text": "Last used account indicator" }
+    ]
+  },
+  {
+    "version": "v1.5.2",
+    "date": null,
+    "new": false,
     "changes": [
       { "type": "~", "text": "Stability improvements" },
       { "type": "~", "text": "Bug fixes" }
