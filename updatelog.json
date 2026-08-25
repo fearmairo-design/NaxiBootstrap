@@ -1,8 +1,18 @@
 [
   {
-    "version": "v1.4.0",
+    "version": "v1.5.0",
     "date": null,
     "new": true,
+    "changes": [
+      { "type": "~", "text": "Completely new design" },
+      { "type": "~", "text": "Redesigned buttons and pages" },
+      { "type": "~", "text": "Smoother animations" }
+    ]
+  },
+  {
+    "version": "v1.4.0",
+    "date": null,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Accounts tab — add and switch Roblox accounts" },
       { "type": "+", "text": "Auto-update for everyone" },
