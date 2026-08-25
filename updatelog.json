@@ -1,12 +1,22 @@
 [
   {
-    "version": "v1.1.0",
+    "version": "v1.4.0",
+    "date": null,
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Accounts tab — add and switch Roblox accounts" },
+      { "type": "+", "text": "Auto-update for everyone" },
+      { "type": "~", "text": "Bug fixes" }
+    ]
+  },
+  {
+    "version": "v1.3.0",
     "date": null,
     "new": false,
     "changes": [
       { "type": "+", "text": "Updated UI" },
-      { "type": "+", "text": "Update log" },
-      { "type": "~", "text": "Bug fix" }
+      { "type": "+", "text": "Added License" },
+      { "type": "~", "text": "Bugs fixed" }
     ]
   },
   {
@@ -20,13 +30,13 @@
     ]
   },
   {
-    "version": "v1.3.0",
+    "version": "v1.1.0",
     "date": null,
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Updated UI" },
-      { "type": "+", "text": "Added License" },
-      { "type": "~", "text": "Bugs fixed" }
+      { "type": "+", "text": "Update log" },
+      { "type": "~", "text": "Bug fix" }
     ]
-  }  
+  }
 ]
