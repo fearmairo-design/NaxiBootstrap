@@ -1,0 +1,69 @@
+[
+  {
+    "version": "v1.5.2",
+    "date": null,
+    "new": true,
+    "changes": [
+      { "type": "~", "text": "Stability improvements" },
+      { "type": "~", "text": "Bug fixes" }
+    ]
+  },
+  {
+    "version": "v1.5.1",
+    "date": null,
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Launcher closes when Roblox opens" }
+    ]
+  },
+  {
+    "version": "v1.5.0",
+    "date": null,
+    "new": false,
+    "changes": [
+      { "type": "~", "text": "Completely new design" },
+      { "type": "~", "text": "Redesigned buttons and pages" },
+      { "type": "~", "text": "Smoother animations" }
+    ]
+  },
+  {
+    "version": "v1.4.0",
+    "date": null,
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Accounts tab — add and switch Roblox accounts" },
+      { "type": "+", "text": "Auto-update for everyone" },
+      { "type": "~", "text": "Bug fixes" }
+    ]
+  },
+  {
+    "version": "v1.3.0",
+    "date": null,
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Updated UI" },
+      { "type": "+", "text": "Added License" },
+      { "type": "~", "text": "Bugs fixed" }
+    ]
+  },
+  {
+    "version": "v1.2.0",
+    "date": null,
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Updated UI" },
+      { "type": "+", "text": "Animations" },
+      { "type": "~", "text": "Bug fix" }
+    ]
+  },
+  {
+    "version": "v1.1.0",
+    "date": null,
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Updated UI" },
+      { "type": "+", "text": "Update log" },
+      { "type": "~", "text": "Bug fix" }
+    ]
+  }
+]
