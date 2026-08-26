@@ -1,8 +1,20 @@
 [
   {
+    "version": "v1.6.0",
+    "date": "2026-08-26",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Cursors tab — custom Normal / Pointing / Shift-Lock cursors (PNG import)" },
+      { "type": "+", "text": "Central backup & auto-migration — custom cursors, skybox and fonts survive Roblox updates" },
+      { "type": "+", "text": "Reset to Default now restores embedded default cursors (Arrow, Hand, I-Beam, Shift-Lock)" },
+      { "type": "~", "text": "Fixed Shift-Lock path (content/textures/MouseLockedCursor.png)" },
+      { "type": "~", "text": "Fixed Reset crash (logical child error) and backup handling" }
+    ]
+  },
+  {
     "version": "v1.5.3",
     "date": null,
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Account switching now works correctly" },
       { "type": "+", "text": "Launch button uses last selected account" },
