@@ -1,8 +1,23 @@
 [
   {
+    "version": "v1.6.5",
+    "date": "2026-08-27",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Emotes tab — custom emote wheel textures (CircleBackground, SegmentedCircle, SelectedGradient, SelectedLine)" },
+      { "type": "+", "text": "IBeam cursor — custom text input cursor support" },
+      { "type": "+", "text": "Skybox now works with .tex files instead of PNG (select any .tex, all files from that folder applied)" },
+      { "type": "+", "text": "Font changer replaces ALL Roblox fonts (not just Builder Sans) — works in games too" },
+      { "type": "+", "text": "System tray — launcher minimizes to tray on close (double-click to restore, right-click for Show/Exit)" },
+      { "type": "+", "text": "I-beam cursor on text input fields" },
+      { "type": "~", "text": "Fixed Emotes tab preview not showing after restart" },
+      { "type": "~", "text": "Fixed Cursors tab preview not showing after restart" }
+    ]
+  },
+  {
     "version": "v1.6.0",
     "date": "2026-08-26",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Cursors tab — custom Normal / Pointing / Shift-Lock cursors (PNG import)" },
       { "type": "+", "text": "Central backup & auto-migration — custom cursors, skybox and fonts survive Roblox updates" },
