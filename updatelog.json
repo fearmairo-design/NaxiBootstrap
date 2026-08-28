@@ -7,6 +7,7 @@
       { "type": "+", "text": "Discord RPC Editor — custom presence (Details/State/Large Image, elapsed time)" },
       { "type": "+", "text": "Studio button — launch Roblox Studio from Home" },
       { "type": "+", "text": "Launcher minimizes to tray after launching Roblox" }
+    ]
   },
   {
     "version": "v1.6.5",
