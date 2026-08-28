@@ -1,8 +1,20 @@
-[
+﻿[
+  {
+    "version": "v1.7.0",
+    "date": "2026-08-28",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Discord RPC Editor — custom presence (Details/State/Large Image, elapsed time)" },
+      { "type": "+", "text": "Studio button — launch Roblox Studio from Home" },
+      { "type": "+", "text": "Launcher minimizes to tray after launching Roblox" },
+      { "type": "~", "text": "Fixed update system via updatelog.json on GitHub" },
+      { "type": "~", "text": "Fixed Update Log scrolling" }
+    ]
+  },
   {
     "version": "v1.6.5",
     "date": "2026-08-27",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Emotes tab — custom emote wheel textures (CircleBackground, SegmentedCircle, SelectedGradient, SelectedLine)" },
       { "type": "+", "text": "IBeam cursor — custom text input cursor support" },
@@ -104,3 +116,4 @@
     ]
   }
 ]
+
