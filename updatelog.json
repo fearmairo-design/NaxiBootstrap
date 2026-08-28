@@ -4,7 +4,7 @@
     "date": "2026-08-28",
     "new": true,
     "changes": [
-      { "type": "+", "text": "Discord RPC Editor — custom presence (Details/State/Large Image, elapsed time)" },
+      { "type": "+", "text": "Added Discord RPC" },
       { "type": "+", "text": "Studio button — launch Roblox Studio from Home" }
     ]
   },
