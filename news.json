@@ -6,7 +6,7 @@
     "title": "TEST NEWS",
     "subtitle": "GAME UPDATE",
     "imageUrl": "https://i.pinimg.com/736x/af/60/bb/af60bb72c465711a8c7c13174bb40fe4.jpg",
-    "text": "Test news — это большой текст снизу. Меняй title для жирной надписи, subtitle для надписи GAME UPDATE, imageUrl для фото, text для описания, fontFamily для шрифта, author для автора (Foxzy/Liniks69/mxxnbyal).",
+    "text": "This is the body text below the photo. Change title for the big bold heading, subtitle for GAME UPDATE line, imageUrl for the photo, text for description, fontFamily for font, author for Foxzy / Liniks69 / mxxnbyal.",
     "fontFamily": "Verdana",
     "avatarUrl": ""
   }
