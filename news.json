@@ -1,0 +1,11 @@
+[
+  {
+    "id": "1",
+    "author": "Foxzy",
+    "date": "2026-08-28T18:00:00",
+    "imageUrl": "https://i.pinimg.com/736x/af/60/bb/af60bb72c465711a8c7c13174bb40fe4.jpg",
+    "text": "Welcome to Naxi Bootstrap News! Add your photo above and text below. You can set custom fontFamily and choose author: Foxzy, Liniks69 or mxxnbyal. Just edit this file on GitHub.",
+    "fontFamily": "Verdana",
+    "avatarUrl": ""
+  }
+]
