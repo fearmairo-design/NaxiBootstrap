@@ -4,8 +4,9 @@
     "author": "Foxzy",
     "date": "2026-08-28T18:00:00",
     "title": "TEST NEWS",
+    "subtitle": "GAME UPDATE",
     "imageUrl": "https://i.pinimg.com/736x/af/60/bb/af60bb72c465711a8c7c13174bb40fe4.jpg",
-    "text": "Test news",
+    "text": "Test news — это большой текст снизу. Меняй title для жирной надписи, subtitle для надписи GAME UPDATE, imageUrl для фото, text для описания, fontFamily для шрифта, author для автора (Foxzy/Liniks69/mxxnbyal).",
     "fontFamily": "Verdana",
     "avatarUrl": ""
   }
