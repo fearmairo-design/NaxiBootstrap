@@ -1,11 +1,27 @@
 ﻿[
   {
-    "version": "v1.7.0",
+    "version": "v1.7.5",
     "date": "2026-08-28",
     "new": true,
     "changes": [
-      { "type": "+", "text": "Added Discord RPC" },
-      { "type": "+", "text": "Studio button — launch Roblox Studio from Home" }
+      { "type": "+", "text": "News tab — photo on top, text below, custom font, author chooser (Foxzy/Liniks69/mxxnbyal), NEW tag" },
+      { "type": "+", "text": "News detail — click any post to open full view with smooth fade/slide" },
+      { "type": "+", "text": "Subtitle GAME UPDATE is now editable per post" },
+      { "type": "+", "text": "Photo fades to gray on scroll, rounded top corners" },
+      { "type": "~", "text": "Legal tab updated — anti-steal protection, code obfuscation" },
+      { "type": "~", "text": "Drag window by top bar only" }
+    ]
+  },
+  {
+    "version": "v1.7.0",
+    "date": "2026-08-28",
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Discord RPC Editor — custom presence (Details/State/Large Image, elapsed time)" },
+      { "type": "+", "text": "Studio button — launch Roblox Studio from Home" },
+      { "type": "+", "text": "Launcher minimizes to tray after launching Roblox" },
+      { "type": "~", "text": "Fixed update system via updatelog.json on GitHub" },
+      { "type": "~", "text": "Fixed Update Log scrolling" }
     ]
   },
   {

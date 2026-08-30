@@ -3,10 +3,10 @@
     "id": "1",
     "author": "Foxzy",
     "date": "2026-08-28T18:00:00",
-    "title": "UPDATE 7.5",
-    "subtitle": "LAUNCHER UPDATE",
-    "imageUrl": "https://media.discordapp.net/attachments/1541918313280442440/1543493436903006238/863e81676047f091.png?ex=6a9511c8&is=6a93c048&hm=0ca411b34989c7e89a6c6ec9db9b3a506851e589ef7bae523370a0a13b8bf204&=&format=webp&quality=lossless",
-    "text": "LAUNCHER UPDATE. Added: News page; Now you can drag thw launcher anywhere you want; Studio button; Updated Legal",
+    "title": "TEST NEWS",
+    "subtitle": "GAME UPDATE",
+    "imageUrl": "https://i.pinimg.com/736x/af/60/bb/af60bb72c465711a8c7c13174bb40fe4.jpg",
+    "text": "This is the body text below the photo. Change title for the big bold heading, subtitle for GAME UPDATE line, imageUrl for the photo, text for description, fontFamily for font, author for Foxzy / Liniks69 / mxxnbyal.",
     "fontFamily": "Verdana",
     "avatarUrl": ""
   }
