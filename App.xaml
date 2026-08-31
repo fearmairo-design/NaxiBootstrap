@@ -307,6 +307,7 @@
             <Setter Property="Background" Value="#10131A"/>
             <Setter Property="Foreground" Value="{StaticResource Text}"/>
             <Setter Property="CaretBrush" Value="{StaticResource Text}"/>
+            <Setter Property="Cursor" Value="IBeam"/>
             <Setter Property="BorderBrush" Value="#262B34"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="12,9"/>

@@ -45,8 +45,11 @@
                     <Border Background="#12151B" BorderBrush="#20252E" BorderThickness="1" CornerRadius="20" Padding="5" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
                             <Button x:Name="HomeNav" Content="Home" Style="{StaticResource NavButtonActive}" Click="Home_Click"/>
+                            <Button x:Name="NewsNav" Content="News" Style="{StaticResource NavButton}" Click="News_Click"/>
                             <Button x:Name="AccountsNav" Content="Accounts" Style="{StaticResource NavButton}" Click="Accounts_Click"/>
                             <Button x:Name="FlagsNav" Content="FastFlags" Style="{StaticResource NavButton}" Click="Flags_Click"/>
+                            <Button x:Name="CursorsNav" Content="Cursors" Style="{StaticResource NavButton}" Click="Cursors_Click"/>
+                            <Button x:Name="EmotesNav" Content="Emotes" Style="{StaticResource NavButton}" Click="Emotes_Click"/>
                             <Button x:Name="MaintenanceNav" Content="Maintenance" Style="{StaticResource NavButton}" Click="Maintenance_Click"/>
                             <Button x:Name="SettingsNav" Content="Settings" Style="{StaticResource NavButton}" Click="Settings_Click"/>
                             <Button x:Name="AboutNav" Content="About us" Style="{StaticResource NavButton}" Click="About_Click"/>

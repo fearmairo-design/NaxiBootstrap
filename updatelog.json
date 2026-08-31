@@ -1,13 +1,76 @@
-[
+﻿[
+  {
+    "version": "v1.7.6",
+    "date": "2026-08-31",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Custom cursors, emote textures and skybox settings now persist across Roblox updates" },
+      { "type": "+", "text": "Added Discord Rich Presence editor with custom details, images and buttons" },
+      { "type": "+", "text": "Added Roblox Studio launch from the Home page" },
+      { "type": "~", "text": "Improved launcher startup, window behavior and localization" },
+      { "type": "~", "text": "General stability and interface improvements" }
+    ]
+  },
+  {
+    "version": "v1.7.5",
+    "date": "2026-08-28",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "News tab — photo on top, text below, custom font, author chooser (Foxzy/Liniks69/mxxnbyal), NEW tag" },
+      { "type": "+", "text": "News detail — click any post to open full view with smooth fade/slide" },
+      { "type": "+", "text": "Subtitle GAME UPDATE is now editable per post" },
+      { "type": "+", "text": "Photo fades to gray on scroll, rounded top corners" },
+      { "type": "~", "text": "Legal tab updated — anti-steal protection, code obfuscation" },
+      { "type": "~", "text": "Drag window by top bar only" }
+    ]
+  },
+  {
+    "version": "v1.7.0",
+    "date": "2026-08-28",
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Discord RPC Editor — custom presence (Details/State/Large Image, elapsed time)" },
+      { "type": "+", "text": "Studio button — launch Roblox Studio from Home" },
+      { "type": "+", "text": "Launcher minimizes to tray after launching Roblox" },
+      { "type": "~", "text": "Fixed update system via updatelog.json on GitHub" },
+      { "type": "~", "text": "Fixed Update Log scrolling" }
+    ]
+  },
+  {
+    "version": "v1.6.5",
+    "date": "2026-08-27",
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Emotes tab — custom emote wheel textures (CircleBackground, SegmentedCircle, SelectedGradient, SelectedLine)" },
+      { "type": "+", "text": "IBeam cursor — custom text input cursor support" },
+      { "type": "+", "text": "Skybox now works with .tex files instead of PNG (select any .tex, all files from that folder applied)" },
+      { "type": "+", "text": "Font changer replaces ALL Roblox fonts (not just Builder Sans) — works in games too" },
+      { "type": "+", "text": "System tray — launcher minimizes to tray on close (double-click to restore, right-click for Show/Exit)" },
+      { "type": "+", "text": "I-beam cursor on text input fields" },
+      { "type": "~", "text": "Fixed Emotes tab preview not showing after restart" },
+      { "type": "~", "text": "Fixed Cursors tab preview not showing after restart" }
+    ]
+  },
+  {
+    "version": "v1.6.0",
+    "date": "2026-08-26",
+    "new": false,
+    "changes": [
+      { "type": "+", "text": "Cursors tab — custom Normal / Pointing / Shift-Lock cursors (PNG import)" },
+      { "type": "+", "text": "Central backup & auto-migration — custom cursors, skybox and fonts survive Roblox updates" },
+      { "type": "+", "text": "Reset to Default now restores embedded default cursors (Arrow, Hand, I-Beam, Shift-Lock)" },
+      { "type": "~", "text": "Fixed Shift-Lock path (content/textures/MouseLockedCursor.png)" },
+      { "type": "~", "text": "Fixed Reset crash (logical child error) and backup handling" }
+    ]
+  },
   {
     "version": "v1.5.3",
     "date": null,
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Account switching now works correctly" },
       { "type": "+", "text": "Launch button uses last selected account" },
-      { "type": "+", "text": "Last used account indicator" },
-      { "type": "~", "text": "Improved cookie writing reliability" }
+      { "type": "+", "text": "Last used account indicator" }
     ]
   },
   {
@@ -78,3 +141,4 @@
     ]
   }
 ]
+

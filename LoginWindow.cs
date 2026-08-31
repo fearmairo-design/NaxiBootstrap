@@ -9,6 +9,11 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using Button = System.Windows.Controls.Button;
+using Color = System.Windows.Media.Color;
+using MessageBox = System.Windows.MessageBox;
+using Cursors = System.Windows.Input.Cursors;
+using Orientation = System.Windows.Controls.Orientation;
 
 namespace NaxiBootstrap;
 

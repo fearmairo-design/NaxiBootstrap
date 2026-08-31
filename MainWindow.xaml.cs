@@ -14,6 +14,20 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using Microsoft.Win32;
 using Path = System.IO.Path;
+using Image = System.Windows.Controls.Image;
+using Button = System.Windows.Controls.Button;
+using TextBox = System.Windows.Controls.TextBox;
+using ProgressBar = System.Windows.Controls.ProgressBar;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using Orientation = System.Windows.Controls.Orientation;
+using Color = System.Windows.Media.Color;
+using Point = System.Windows.Point;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using MessageBox = System.Windows.MessageBox;
+using Application = System.Windows.Application;
+using FontFamily = System.Windows.Media.FontFamily;
+using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 
 namespace NaxiBootstrap;
 
@@ -34,6 +48,29 @@ internal class AppConfig
     public string FontName { get; set; } = "Segoe UI";
     public string BackgroundUrl { get; set; } = "";
     public long LastUsedAccountId { get; set; }
+    public string NormalCursorPath { get; set; } = "";
+    public string PointingCursorPath { get; set; } = "";
+    public string ShiftCursorPath { get; set; } = "";
+    public string IBeamCursorPath { get; set; } = "";
+    public string EmoteCircleBgPath { get; set; } = "";
+    public string EmoteSegmentedPath { get; set; } = "";
+    public string EmoteGradientPath { get; set; } = "";
+    public string EmoteSelectedLinePath { get; set; } = "";
+    public string SkyFolderPath { get; set; } = "";
+    public bool DiscordRpcEnabled { get; set; } = false;
+    public string DiscordRpcClientId { get; set; } = "1542960817199128596";
+    public string DiscordRpcDetails { get; set; } = "Playing Roblox";
+    public string DiscordRpcState { get; set; } = "via Naxi Bootstrap";
+    public string DiscordRpcLargeImage { get; set; } = "";
+    public string DiscordRpcLargeText { get; set; } = "Naxi Bootstrap";
+    public string DiscordRpcSmallImage { get; set; } = "";
+    public string DiscordRpcSmallText { get; set; } = "";
+    public string DiscordRpcButton1Label { get; set; } = "";
+    public string DiscordRpcButton1Url { get; set; } = "";
+    public string DiscordRpcButton2Label { get; set; } = "";
+    public string DiscordRpcButton2Url { get; set; } = "";
+    public bool DiscordRpcShowElapsed { get; set; } = true;
+    public string Language { get; set; } = "En";
 }
 
 internal static class RobloxLauncher
@@ -115,6 +152,39 @@ internal static class RobloxLauncher
             .ToList();
         if (players.Count > 0) return players;
         return Directory.GetDirectories(versions).OrderByDescending(Directory.GetLastWriteTime).Take(1).ToList();
+    }
+
+    public static string? FindStudioExe()
+    {
+        var candidates = new List<string>();
+        var searchRoots = new[]
+        {
+            Path.Combine(RobloxRoot, "Versions"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Bloxstrap", "Versions"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Roblox", "Versions"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Roblox", "Versions"),
+        };
+        foreach (var root in searchRoots)
+        {
+            if (!Directory.Exists(root)) continue;
+            try
+            {
+                foreach (var dir in Directory.GetDirectories(root))
+                {
+                    var exe = Path.Combine(dir, "RobloxStudioBeta.exe");
+                    if (File.Exists(exe)) candidates.Add(exe);
+                }
+            } catch { }
+        }
+        if (candidates.Count > 0)
+            return candidates.OrderByDescending(File.GetLastWriteTime).First();
+        // fallback: deep search in LocalAppData\Roblox
+        try
+        {
+            var deep = Directory.GetFiles(RobloxRoot, "RobloxStudioBeta.exe", SearchOption.AllDirectories).FirstOrDefault();
+            if (deep != null) return deep;
+        } catch { }
+        return null;
     }
 
     public static Dictionary<string, string> BuildFlags(AppConfig config)
@@ -470,15 +540,16 @@ internal static class AccountStore
 
 public partial class MainWindow : Window
 {
-    private const string AppVersion = "v1.5.3";
+    private const string AppVersion = "v1.7.5";
 
-    private const string GitHubRepo = "fearmairo-design/NaxiBootstrap";
+    private static readonly string GitHubRepo = Deobfuscate("ZmVhcm1haXJvLWRlc2lnbi9OYXhpQm9vdHN0cmFw");
 
-    private const string DiscordUrl = "https://discord.gg/";
-    private const string TelegramUrl = "https://t.me/";
-    private const string WebsiteUrl = "https://github.com/fearmairo-design/NaxiBootstrap";
+    private const string DiscordUrl = "https://discord.gg/UkKxjgGkvB";
+    private const string TelegramUrl = "https://t.me/naxistudios";
+    private const string WebsiteUrl = "https://naxi-bootstrap.vercel.app/";
 
     private static string UpdateLogUrl => $"https://raw.githubusercontent.com/{GitHubRepo}/main/updatelog.json?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+    private static string NewsUrl => $"https://raw.githubusercontent.com/{GitHubRepo}/main/news.json?t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
     private static string ReleasesApiUrl => $"https://api.github.com/repos/{GitHubRepo}/releases/latest";
 
     private static readonly string LogFile = Path.Combine(AppContext.BaseDirectory, "updatelog.json");
@@ -492,6 +563,12 @@ public partial class MainWindow : Window
     private static readonly string BgCacheFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "background.cache");
     private static readonly string SkyBackupDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "sky_backup");
     private static readonly string FontBackupDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "font_backup");
+    private static readonly string CursorBackupDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "cursor_backup");
+    private static readonly string CustomCursorCacheDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "custom_cursors");
+    private static readonly string EmoteBackupDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "emote_backup");
+    private static readonly string CustomEmoteCacheDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "custom_emotes");
+    private static readonly string CustomSkyCacheDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "custom_sky");
+    private static readonly string CustomFontPath_File = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "custom_font.dat");
 
     private static readonly string[] Fonts =
     {
@@ -501,15 +578,18 @@ public partial class MainWindow : Window
 
     private static readonly HttpClient Http = new();
 
-    private readonly Grid _home;
-    private readonly Grid _accounts;
-    private readonly Grid _fastFlags;
-    private readonly Grid _maintenance;
-    private readonly Grid _settings;
-    private readonly Grid _about;
-    private readonly Grid _legal;
-    private readonly StackPanel _updateList = new();
-    private readonly StackPanel _legalContent = new();
+    private Grid _home;
+    private Grid _news;
+    private Grid _accounts;
+    private Grid _fastFlags;
+    private Grid _cursors;
+    private Grid _maintenance;
+    private Grid _settings;
+    private Grid _about;
+    private Grid _legal;
+    private StackPanel _updateList = new();
+    private StackPanel _newsList = new();
+    private StackPanel _legalContent = new();
     private Button _licenseTab = new();
     private Button _privacyTab = new();
     private StackPanel _homeLeft = new();
@@ -539,7 +619,32 @@ public partial class MainWindow : Window
 
     private TextBox _accountTokenBox = new();
     private TextBlock _accountStatus = new();
-    private readonly StackPanel _accountsList = new();
+    private StackPanel _accountsList = new();
+
+    private TextBlock _cursorStatus = new();
+    private TextBlock _normalCursorPath = new();
+    private TextBlock _pointingCursorPath = new();
+    private TextBlock _shiftCursorPath = new();
+    private TextBlock _ibeamCursorPath = new();
+    private Image _normalCursorPreview = new();
+    private Image _pointingCursorPreview = new();
+    private Image _shiftCursorPreview = new();
+    private Image _ibeamCursorPreview = new();
+    private string? _normalCursorFile;
+    private string? _pointingCursorFile;
+    private string? _shiftCursorFile;
+    private string? _ibeamCursorFile;
+
+    private TextBlock _emoteStatus = new();
+    private Image _emoteCircleBgPreview = new();
+    private Image _emoteSegmentedPreview = new();
+    private Image _emoteGradientPreview = new();
+    private Image _emoteSelectedLinePreview = new();
+    private string? _emoteCircleBgFile;
+    private string? _emoteSegmentedFile;
+    private string? _emoteGradientFile;
+    private string? _emoteSelectedLineFile;
+    private Grid _emotes;
 
     private TextBlock _logsSizeText = new();
     private TextBlock _storageSizeText = new();
@@ -551,10 +656,26 @@ public partial class MainWindow : Window
     private bool _updating;
     private bool _switching;
     private bool _robloxNeedsReapply;
+    private System.Windows.Forms.NotifyIcon? _trayIcon;
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool IsDebuggerPresent();
+    static string Deobfuscate(string b64) { try { return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64)); } catch { return b64; } }
 
     static MainWindow()
     {
         Http.DefaultRequestHeaders.Add("User-Agent", "NaxiBootstrap");
+        try
+        {
+            if (System.Diagnostics.Debugger.IsAttached || System.Diagnostics.Debugger.IsLogging() || IsDebuggerPresent())
+                Environment.Exit(0);
+            var bad = new[] { "dnspy", "decompiler", "ildasm", "ilspy", "dotpeek", "ida", "x64dbg", "ollydbg", "cheatengine", "fiddler", "wireshark" };
+            foreach (var n in bad) foreach (var p in System.Diagnostics.Process.GetProcessesByName(n)) Environment.Exit(0);
+            foreach (var p in System.Diagnostics.Process.GetProcesses())
+            {
+                try { var name = p.ProcessName.ToLower(); foreach (var b in bad) if (name.Contains(b)) Environment.Exit(0); } catch { }
+            }
+            if (Environment.GetEnvironmentVariable("COR_ENABLE_PROFILING") == "1") Environment.Exit(0);
+        } catch { }
     }
 
     public MainWindow()
@@ -563,13 +684,43 @@ public partial class MainWindow : Window
         try { Icon = BitmapFrame.Create(new Uri("pack://application:,,,/icon.ico")); } catch { }
 
         _config = RobloxLauncher.LoadConfig();
+        if (Enum.TryParse<Lang>(_config.Language, true, out var _lang)) Localization.Current = _lang;
+        Localization.Changed += () =>
+        {
+            _updateList = new StackPanel();
+            _newsList = new StackPanel();
+            _legalContent = new StackPanel();
+            _accountsList = new StackPanel();
+            _homeLeft = new StackPanel();
+            _logCard = new Border();
+            _licenseTab = new Button();
+            _privacyTab = new Button();
+            _home = BuildHome(); _news = BuildNews(); _accounts = BuildAccounts(); _fastFlags = BuildFastFlags(); _cursors = BuildCursors(); _emotes = BuildEmotes(); _maintenance = BuildMaintenance(); _settings = BuildSettings(); _about = BuildAbout(); _legal = BuildLegal();
+            RenderLog(_log); _logCard.Visibility = _config.HideUpdateLog ? Visibility.Collapsed : Visibility.Visible;
+            HomeNav.Content = Localization.T("Home");
+            NewsNav.Content = Localization.T("News");
+            AccountsNav.Content = Localization.T("Accounts");
+            FlagsNav.Content = Localization.T("FastFlags");
+            CursorsNav.Content = Localization.T("Cursors");
+            EmotesNav.Content = Localization.T("Emotes");
+            MaintenanceNav.Content = Localization.T("Maintenance");
+            SettingsNav.Content = Localization.T("Settings");
+            AboutNav.Content = Localization.T("About us");
+            LegalNav.Content = Localization.T("Legal");
+            PageHost.Content = _home; SetActive(HomeNav);
+            _ = CheckForUpdatesAsync();
+            _ = LoadNewsAsync();
+        };
         if (_config.OpenRobloxLinks) RobloxLauncher.RegisterProtocol(true);
         FontFamily = new FontFamily(string.IsNullOrWhiteSpace(_config.FontName) ? "Segoe UI" : _config.FontName);
 
         _log = LoadLog();
         _home = BuildHome();
+        _news = BuildNews();
         _accounts = BuildAccounts();
         _fastFlags = BuildFastFlags();
+        _cursors = BuildCursors();
+        _emotes = BuildEmotes();
         _maintenance = BuildMaintenance();
         _settings = BuildSettings();
         _about = BuildAbout();
@@ -580,12 +731,73 @@ public partial class MainWindow : Window
         RenderLog(_log);
         _logCard.Visibility = _config.HideUpdateLog ? Visibility.Collapsed : Visibility.Visible;
         RestoreBackgroundFromCache();
+        ApplySavedCursors();
+        ApplySavedEmotes();
         RobloxLauncher.RefreshTokensFromDat();
         try { foreach (var f in Directory.GetFiles(AppContext.BaseDirectory, "*.old")) File.Delete(f); } catch { }
         _ = CheckForUpdatesAsync();
+        if (_config.DiscordRpcEnabled) DiscordRpcService.Start(_config);
 
-        Loaded += (_, _) => PlayOpenAnimation();
-        Closed += (_, _) => Application.Current.Shutdown();
+        Loaded += (_, _) =>
+        {
+            PlayOpenAnimation();
+            try
+                {
+                    System.Drawing.Icon icon;
+                    var iconPath = Path.Combine(AppContext.BaseDirectory, "icon.ico");
+                    if (File.Exists(iconPath))
+                        icon = new System.Drawing.Icon(iconPath);
+                    else
+                    {
+                        var asm = typeof(MainWindow).Assembly;
+                        var resName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("icon.ico", StringComparison.OrdinalIgnoreCase));
+                        if (resName != null)
+                        {
+                            using var s = asm.GetManifestResourceStream(resName);
+                            icon = s != null ? new System.Drawing.Icon(s) : System.Drawing.SystemIcons.Application;
+                        }
+                        else
+                            icon = System.Drawing.SystemIcons.Application;
+                    }
+                    _trayIcon = new System.Windows.Forms.NotifyIcon();
+                    _trayIcon.Icon = icon;
+                    _trayIcon.Text = "Naxi Bootstrap";
+                    _trayIcon.Visible = false;
+                    var menu = new System.Windows.Forms.ContextMenuStrip();
+                    var showItem = menu.Items.Add("Show");
+                    showItem.Click += (_, _) => { Show(); WindowState = WindowState.Normal; Activate(); _trayIcon!.Visible = false; _minimizedToTray = false; };
+                    menu.Items.Add("-");
+                    var exitItem = menu.Items.Add("Exit");
+                    exitItem.Click += (_, _) => { try { _trayIcon!.Visible = false; _trayIcon.Dispose(); } catch { } Environment.Exit(0); };
+                    _trayIcon.ContextMenuStrip = menu;
+                    _trayIcon.DoubleClick += (_, _) => { Show(); WindowState = WindowState.Normal; Activate(); _trayIcon!.Visible = false; _minimizedToTray = false; };
+                    // hook for second instance to restore
+                    var helper = new System.Windows.Interop.WindowInteropHelper(this);
+                    var source = System.Windows.Interop.HwndSource.FromHwnd(helper.Handle);
+                    source?.AddHook((IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                    {
+                        if (msg == 0x0401) { Show(); WindowState = WindowState.Normal; Activate(); if (_trayIcon != null) _trayIcon.Visible = false; _minimizedToTray = false; }
+                        return IntPtr.Zero;
+                    });
+                } catch { }
+        };
+        Closing += MainWindow_Closing;
+    }
+
+    private bool _minimizedToTray;
+
+    private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_minimizedToTray)
+        {
+            e.Cancel = true;
+            Hide();
+            _trayIcon!.Visible = true;
+            _minimizedToTray = true;
+            return;
+        }
+        try { _trayIcon?.Dispose(); } catch { }
+        DiscordRpcService.Stop();
     }
 
     private void PlayOpenAnimation()
@@ -653,13 +865,16 @@ public partial class MainWindow : Window
 
     private void SetActive(Button active)
     {
-        foreach (var b in new[] { HomeNav, AccountsNav, FlagsNav, MaintenanceNav, SettingsNav, AboutNav, LegalNav })
+        foreach (var b in new[] { HomeNav, NewsNav, AccountsNav, FlagsNav, CursorsNav, EmotesNav, MaintenanceNav, SettingsNav, AboutNav, LegalNav })
             b.Style = (Style)FindResource(b == active ? "NavButtonActive" : "NavButton");
     }
 
     private void Home_Click(object sender, RoutedEventArgs e) => SwitchPage(_home, HomeNav);
+    private void News_Click(object sender, RoutedEventArgs e) { _ = LoadNewsAsync(); SwitchPage(_news, NewsNav); }
     private void Accounts_Click(object sender, RoutedEventArgs e) { RenderAccounts(); SwitchPage(_accounts, AccountsNav); }
     private void Flags_Click(object sender, RoutedEventArgs e) { CheckRobloxVersion(); SwitchPage(_fastFlags, FlagsNav); }
+    private void Cursors_Click(object sender, RoutedEventArgs e) { RefreshCursorPreviews(); SwitchPage(_cursors, CursorsNav); }
+    private void Emotes_Click(object sender, RoutedEventArgs e) { SwitchPage(_emotes, EmotesNav); }
     private void Maintenance_Click(object sender, RoutedEventArgs e) { RefreshSizes(); RefreshInstallInfo(); SwitchPage(_maintenance, MaintenanceNav); }
     private void Settings_Click(object sender, RoutedEventArgs e) => SwitchPage(_settings, SettingsNav);
     private void About_Click(object sender, RoutedEventArgs e) => SwitchPage(_about, AboutNav);
@@ -701,8 +916,9 @@ public partial class MainWindow : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 28, 0, 0) };
         _updateBtn = Btn("Update", false, 130); _updateBtn.IsEnabled = false; _updateBtn.Click += Update_Click;
         var launch = Btn("Launch", true, 130); launch.Margin = new Thickness(10, 0, 0, 0); launch.Click += Launch_Click;
+        var studio = Btn("Studio", true, 110); studio.Margin = new Thickness(10, 0, 0, 0); studio.Click += Studio_Click;
         var discord = Btn("Discord", false, 110); discord.Margin = new Thickness(10, 0, 0, 0); discord.Click += (_, _) => OpenLink(DiscordUrl);
-        buttons.Children.Add(_updateBtn); buttons.Children.Add(launch); buttons.Children.Add(discord);
+        buttons.Children.Add(_updateBtn); buttons.Children.Add(launch); buttons.Children.Add(studio); buttons.Children.Add(discord);
         left.Children.Add(buttons);
 
         Grid.SetColumn(left, 0); g.Children.Add(left);
@@ -731,8 +947,13 @@ public partial class MainWindow : Window
             {
                 _log = remote;
                 RenderLog(_log);
+                // cache successful fetch locally
+                try { File.WriteAllText(LogFile, JsonSerializer.Serialize(remote, new JsonSerializerOptions { WriteIndented = true })); } catch { }
             }
+        } catch { }
 
+        try
+        {
             var (tag, asset) = await GetLatestReleaseAsync();
             if (IsNewer(tag))
             {
@@ -747,6 +968,15 @@ public partial class MainWindow : Window
         catch
         {
             _updateText.Text = "Could not check for updates";
+            // keep log visible even if release check fails
+            if (_log.Count == 0 || _log[0].Version == "v1.1.0")
+            {
+                try
+                {
+                    var fallback = LoadLog();
+                    if (fallback.Count > 0) { _log = fallback; RenderLog(_log); }
+                } catch { }
+            }
         }
 
         CheckRobloxVersion();
@@ -769,9 +999,41 @@ public partial class MainWindow : Window
 
         if (name != stored)
         {
-            _robloxNeedsReapply = true;
-            _updateBtn.IsEnabled = true;
-            _updateText.Text = "Roblox updated — press Update to re-apply FastFlags";
+            // Auto-migrate everything to new version
+            EnsureMigratedBackups();
+            MigrateCustomizationsIfNeeded(_config, stored, name);
+            ApplySavedCursors();
+            RobloxLauncher.ApplyFlags(_config);
+            // Apply sky/font from cache if exists (already done in Migrate, but ensure)
+            try
+            {
+                if (Directory.Exists(CustomSkyCacheDir) && Directory.GetFiles(CustomSkyCacheDir, "*.tex").Length > 0)
+                {
+                    foreach (var pf in RobloxLauncher.FindPlayerFolders())
+                    {
+                        var skyDir = Path.Combine(pf, "PlatformContent", "pc", "textures", "sky");
+                        if (!Directory.Exists(skyDir)) continue;
+                        foreach (var f in Directory.GetFiles(CustomSkyCacheDir, "*.tex"))
+                            File.Copy(f, Path.Combine(skyDir, Path.GetFileName(f)), true);
+                    }
+                }
+                if (File.Exists(CustomFontPath_File))
+                {
+                    foreach (var pf in RobloxLauncher.FindPlayerFolders())
+                    {
+                        var fontsDir = Path.Combine(pf, "Content", "fonts");
+                        if (!Directory.Exists(fontsDir)) continue;
+                        var targets = Directory.GetFiles(fontsDir, "*.*").Where(f => f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase)).ToArray();
+                        foreach (var t in targets) File.Copy(CustomFontPath_File, t, true);
+                    }
+                }
+            } catch { }
+
+            _config.RobloxVersion = name;
+            RobloxLauncher.SaveConfig(_config);
+            // keep flag for UI
+            _robloxNeedsReapply = false;
+            _updateText.Text = $"Roblox updated to {name} — customizations migrated automatically";
         }
     }
 
@@ -818,33 +1080,46 @@ public partial class MainWindow : Window
     private async Task RunLauncherUpdate(string tag, string asset)
     {
         _updateText.Text = $"Downloading {tag}...";
-        await DownloadAsync(asset, UpdateZip);
+        bool isZip = asset.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+        string downloadPath = isZip ? UpdateZip : UpdateZip + ".exe";
+        await DownloadAsync(asset, downloadPath);
 
         _updateText.Text = "Installing...";
         _progress.Value = 100;
         _percent.Text = "100%";
 
-        if (Directory.Exists(UpdateDir)) Directory.Delete(UpdateDir, true);
-        ZipFile.ExtractToDirectory(UpdateZip, UpdateDir);
-
-        var source = UpdateDir;
-        if (Directory.GetFiles(UpdateDir).Length == 0 && Directory.GetDirectories(UpdateDir).Length == 1)
-            source = Directory.GetDirectories(UpdateDir)[0];
-
         var appDir = AppContext.BaseDirectory;
         var currentExe = Process.GetCurrentProcess().MainModule?.FileName;
         if (string.IsNullOrEmpty(currentExe)) currentExe = Path.Combine(appDir, "NaxiBootstrap.exe");
 
-        var oldExe = currentExe + ".old";
-        try { if (File.Exists(oldExe)) File.Delete(oldExe); } catch { }
-        try { File.Move(currentExe, oldExe, true); } catch { }
-
-        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        if (isZip)
         {
-            var rel = Path.GetRelativePath(source, file);
-            var dest = Path.Combine(appDir, rel);
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            File.Copy(file, dest, true);
+            if (Directory.Exists(UpdateDir)) Directory.Delete(UpdateDir, true);
+            ZipFile.ExtractToDirectory(downloadPath, UpdateDir);
+
+            var source = UpdateDir;
+            if (Directory.GetFiles(UpdateDir).Length == 0 && Directory.GetDirectories(UpdateDir).Length == 1)
+                source = Directory.GetDirectories(UpdateDir)[0];
+
+            var oldExe = currentExe + ".old";
+            try { if (File.Exists(oldExe)) File.Delete(oldExe); } catch { }
+            try { File.Move(currentExe, oldExe, true); } catch { }
+
+            foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(source, file);
+                var dest = Path.Combine(appDir, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(file, dest, true);
+            }
+        }
+        else
+        {
+            var newExePath = Path.Combine(appDir, "NaxiBootstrap.exe");
+            var oldExe = currentExe + ".old";
+            try { if (File.Exists(oldExe)) File.Delete(oldExe); } catch { }
+            try { if (File.Exists(currentExe)) File.Move(currentExe, oldExe, true); } catch { }
+            File.Copy(downloadPath, newExePath, true);
         }
 
         var newExe = Path.Combine(appDir, "NaxiBootstrap.exe");
@@ -854,10 +1129,12 @@ public partial class MainWindow : Window
 
     private async Task<(string Tag, string? AssetUrl)> GetLatestReleaseAsync()
     {
-        using var doc = JsonDocument.Parse(await Http.GetStringAsync(ReleasesApiUrl));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        using var doc = JsonDocument.Parse(await Http.GetStringAsync(ReleasesApiUrl, cts.Token));
         var root = doc.RootElement;
         var tag = root.GetProperty("tag_name").GetString() ?? "";
         string? asset = null;
+        string? exeFallback = null;
         if (root.TryGetProperty("assets", out var assets))
         {
             foreach (var a in assets.EnumerateArray())
@@ -868,14 +1145,17 @@ public partial class MainWindow : Window
                     asset = a.GetProperty("browser_download_url").GetString();
                     break;
                 }
+                if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    exeFallback = a.GetProperty("browser_download_url").GetString();
             }
         }
-        return (tag, asset);
+        return (tag, asset ?? exeFallback);
     }
 
     private async Task<List<LogEntry>?> FetchRemoteLogAsync()
     {
-        var json = await Http.GetStringAsync(UpdateLogUrl);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var json = await Http.GetStringAsync(UpdateLogUrl, cts.Token);
         var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         return JsonSerializer.Deserialize<List<LogEntry>>(json, opts);
     }
@@ -934,6 +1214,35 @@ public partial class MainWindow : Window
         Close();
     }
 
+    private void Studio_Click(object sender, RoutedEventArgs e)
+    {
+        var studioExe = RobloxLauncher.FindStudioExe();
+        if (studioExe == null)
+        {
+            MessageBox.Show("Roblox Studio is not installed. Install it from create.roblox.com first.", "Naxi Bootstrap", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // apply account cookie like Launch does
+        try
+        {
+            RobloxLauncher.RefreshTokensFromDat();
+            var accounts = AccountStore.Load();
+            var acc = accounts.FirstOrDefault(a => a.UserId == _config.LastUsedAccountId) ?? accounts.FirstOrDefault();
+            if (acc != null)
+            {
+                var token = AccountStore.Unprotect(acc.ProtectedToken);
+                RobloxLauncher.SetRobloxCookie(token);
+                RobloxLauncher.SetModernCookie(token);
+            }
+        } catch { }
+
+        RobloxLauncher.ApplyFlags(_config);
+        try { Process.Start(new ProcessStartInfo { FileName = studioExe, UseShellExecute = true }); }
+        catch (Exception ex) { MessageBox.Show($"Failed to launch Studio: {ex.Message}", "Naxi Bootstrap", MessageBoxButton.OK, MessageBoxImage.Error); return; }
+        Close();
+    }
+
     private void OpenLink(string url)
     {
         try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
@@ -967,6 +1276,7 @@ public partial class MainWindow : Window
 
     private sealed record LogChange(string Type, string Text);
     private sealed record LogEntry(string Version, string? Date, bool New, List<LogChange> Changes);
+    private sealed record NewsEntry(string Id, string Author, string? Date, string ImageUrl, string Text, string? FontFamily, string? AvatarUrl, string? Title, string? Subtitle);
 
     private static Version? ParseVersion(string? v)
     {
@@ -1007,7 +1317,7 @@ public partial class MainWindow : Window
             {
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
                 row.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = (Brush)FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 9, 0) });
-                row.Children.Add(T($"[{c.Type}] {c.Text}", 13, (Brush)FindResource("Muted"), false));
+                row.Children.Add(T($"[{c.Type}] {Localization.T(c.Text)}", 13, (Brush)FindResource("Muted"), false));
                 s.Children.Add(row);
             }
 
@@ -1071,9 +1381,9 @@ public partial class MainWindow : Window
         var skyCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
         var ss = new StackPanel();
         ss.Children.Add(SectionLabel("SKYBOX"));
-        ss.Children.Add(T("Replace the Roblox sky with your own PNG (512x512 works best). This modifies Roblox game files — use at your own risk. Close Roblox before changing.", 12.5, (Brush)FindResource("Muted"), false, 2));
+        ss.Children.Add(T("Replace the Roblox sky with your own .tex files. Select any .tex file from your sky folder — all .tex files from that folder will be applied. Close Roblox before changing.", 12.5, (Brush)FindResource("Muted"), false, 2));
         var skyRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
-        var setSky = Btn("Set Sky Image...", false, 170); setSky.Click += SetSky_Click;
+        var setSky = Btn("Set Sky Folder...", false, 170); setSky.Click += SetSky_Click;
         var resetSky = Btn("Reset Sky", false, 130); resetSky.Margin = new Thickness(12, 0, 0, 0); resetSky.Click += ResetSky_Click;
         _skyStatus = T("", 12.5, (Brush)FindResource("Muted"), false);
         _skyStatus.VerticalAlignment = VerticalAlignment.Center;
@@ -1086,7 +1396,7 @@ public partial class MainWindow : Window
         var fontCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
         var fs = new StackPanel();
         fs.Children.Add(SectionLabel("ROBLOX FONT"));
-        fs.Children.Add(T("Replace Roblox's default font (Builder Sans) with your own .ttf file. This modifies Roblox game files — use at your own risk. Close Roblox before changing.", 12.5, (Brush)FindResource("Muted"), false, 2));
+        fs.Children.Add(T("Replace all Roblox fonts with your own .ttf/.otf file. This affects both the client and in-game text. Close Roblox before changing.", 12.5, (Brush)FindResource("Muted"), false, 2));
         var fontRow2 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
         var setFont = Btn("Set Font File...", false, 170); setFont.Click += SetRobloxFont_Click;
         var resetFont = Btn("Reset Font", false, 130); resetFont.Margin = new Thickness(12, 0, 0, 0); resetFont.Click += ResetRobloxFont_Click;
@@ -1217,68 +1527,79 @@ public partial class MainWindow : Window
 
     private void SetSky_Click(object sender, RoutedEventArgs e)
     {
-        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _skyStatus.Text = "Close Roblox first"; return; }
-        var player = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
-        if (player == null) { _skyStatus.Text = "Roblox not found"; return; }
-        var skyDir = Path.Combine(player, "PlatformContent", "pc", "textures", "sky");
-        if (!Directory.Exists(skyDir)) { _skyStatus.Text = "Sky folder not found"; return; }
+        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _skyStatus.Text = Localization.T("Closing Roblox..."); foreach (var p in Process.GetProcessesByName("RobloxPlayerBeta")) try { p.Kill(); } catch { } Thread.Sleep(1500); }
+        var allFolders = RobloxLauncher.FindPlayerFolders();
+        if (allFolders.Count == 0) { _skyStatus.Text = Localization.T("Roblox not found"); return; }
 
-        var dlg = new OpenFileDialog { Title = "Choose sky image", Filter = "PNG image|*.png" };
+        var dlg = new Microsoft.Win32.OpenFileDialog { Title = "Choose .tex files from your sky folder", Filter = "TEX files (*.tex)|*.tex", Multiselect = true };
         if (dlg.ShowDialog() != true) return;
+
+        var srcDir = Path.GetDirectoryName(dlg.FileNames[0]);
+        if (srcDir == null) { _skyStatus.Text = "Invalid path"; return; }
+        var srcFiles = dlg.FileNames;
+        if (srcFiles.Length == 0) { _skyStatus.Text = Localization.T("No .tex files found"); return; }
 
         try
         {
             Directory.CreateDirectory(SkyBackupDir);
-            foreach (var dat in Directory.GetFiles(skyDir, "*.dat"))
+            foreach (var pf in allFolders)
             {
-                var backup = Path.Combine(SkyBackupDir, Path.GetFileName(dat));
-                if (!File.Exists(backup)) File.Copy(dat, backup, false);
-                File.Copy(dlg.FileName, dat, true);
+                var skyDir = Path.Combine(pf, "PlatformContent", "pc", "textures", "sky");
+                if (!Directory.Exists(skyDir)) continue;
+                foreach (var f in Directory.GetFiles(skyDir, "*.tex"))
+                {
+                    var bak = Path.Combine(SkyBackupDir, Path.GetFileName(f));
+                    if (!File.Exists(bak)) File.Copy(f, bak, false);
+                }
+                foreach (var src in srcFiles)
+                    File.Copy(src, Path.Combine(skyDir, Path.GetFileName(src)), true);
             }
-            _skyStatus.Text = "Sky replaced. Restart Roblox to see it.";
+            Directory.CreateDirectory(CustomSkyCacheDir);
+            foreach (var src in srcFiles)
+                File.Copy(src, Path.Combine(CustomSkyCacheDir, Path.GetFileName(src)), true);
+            _config.SkyFolderPath = srcDir;
+            RobloxLauncher.SaveConfig(_config);
+            _skyStatus.Text = Localization.T("Sky replaced. Restart Roblox to see it.");
         }
         catch
         {
-            _skyStatus.Text = "Failed to replace sky";
+            _skyStatus.Text = Localization.T("Failed to replace sky");
         }
     }
 
     private void ResetSky_Click(object sender, RoutedEventArgs e)
     {
-        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _skyStatus.Text = "Close Roblox first"; return; }
-        var player = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
-        if (player == null) { _skyStatus.Text = "Roblox not found"; return; }
-        var skyDir = Path.Combine(player, "PlatformContent", "pc", "textures", "sky");
+        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _skyStatus.Text = Localization.T("Closing Roblox..."); foreach (var p in Process.GetProcessesByName("RobloxPlayerBeta")) try { p.Kill(); } catch { } Thread.Sleep(1500); }
         if (!Directory.Exists(SkyBackupDir) || Directory.GetFiles(SkyBackupDir).Length == 0)
         {
-            _skyStatus.Text = "No sky backup found";
+            _skyStatus.Text = Localization.T("No sky backup found");
             return;
         }
         try
         {
-            Directory.CreateDirectory(skyDir);
-            foreach (var f in Directory.GetFiles(SkyBackupDir))
-                File.Copy(f, Path.Combine(skyDir, Path.GetFileName(f)), true);
-            _skyStatus.Text = "Original sky restored";
+            foreach (var pf in RobloxLauncher.FindPlayerFolders())
+            {
+                var skyDir = Path.Combine(pf, "PlatformContent", "pc", "textures", "sky");
+                if (!Directory.Exists(skyDir)) continue;
+                foreach (var f in Directory.GetFiles(SkyBackupDir))
+                    File.Copy(f, Path.Combine(skyDir, Path.GetFileName(f)), true);
+            }
+            _config.SkyFolderPath = "";
+            RobloxLauncher.SaveConfig(_config);
+            if (Directory.Exists(CustomSkyCacheDir)) Directory.Delete(CustomSkyCacheDir, true);
+            _skyStatus.Text = Localization.T("Original sky restored");
         }
         catch
         {
-            _skyStatus.Text = "Failed to restore sky";
+            _skyStatus.Text = Localization.T("Failed to restore sky");
         }
     }
 
     private void SetRobloxFont_Click(object sender, RoutedEventArgs e)
     {
-        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _rbxFontStatus.Text = "Close Roblox first"; return; }
-        var player = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
-        if (player == null) { _rbxFontStatus.Text = "Roblox not found"; return; }
-        var fontsDir = Path.Combine(player, "Content", "fonts");
-        if (!Directory.Exists(fontsDir)) { _rbxFontStatus.Text = "Fonts folder not found"; return; }
-
-        var targets = Directory.GetFiles(fontsDir, "BuilderSans*.*")
-            .Where(f => f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (targets.Length == 0) { _rbxFontStatus.Text = "Builder Sans files not found"; return; }
+        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _rbxFontStatus.Text = Localization.T("Closing Roblox..."); foreach (var p in Process.GetProcessesByName("RobloxPlayerBeta")) try { p.Kill(); } catch { } Thread.Sleep(1500); }
+        var allFolders = RobloxLauncher.FindPlayerFolders();
+        if (allFolders.Count == 0) { _rbxFontStatus.Text = Localization.T("Roblox not found"); return; }
 
         var dlg = new OpenFileDialog { Title = "Choose font file", Filter = "Font file|*.ttf;*.otf" };
         if (dlg.ShowDialog() != true) return;
@@ -1286,41 +1607,53 @@ public partial class MainWindow : Window
         try
         {
             Directory.CreateDirectory(FontBackupDir);
-            foreach (var ttf in targets)
+            foreach (var pf in allFolders)
             {
-                var backup = Path.Combine(FontBackupDir, Path.GetFileName(ttf));
-                if (!File.Exists(backup)) File.Copy(ttf, backup, false);
-                File.Copy(dlg.FileName, ttf, true);
+                var fontsDir = Path.Combine(pf, "Content", "fonts");
+                if (!Directory.Exists(fontsDir)) continue;
+                var targets = Directory.GetFiles(fontsDir, "*.*")
+                    .Where(f => f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                foreach (var t in targets)
+                {
+                    var backup = Path.Combine(FontBackupDir, Path.GetFileName(t));
+                    if (!File.Exists(backup)) File.Copy(t, backup, false);
+                    File.Copy(dlg.FileName, t, true);
+                }
             }
-            _rbxFontStatus.Text = $"Font replaced ({targets.Length} file(s)). Restart Roblox.";
+            File.Copy(dlg.FileName, CustomFontPath_File, true);
+            _rbxFontStatus.Text = "Font replaced. Restart Roblox.";
         }
         catch
         {
-            _rbxFontStatus.Text = "Failed to replace font";
+            _rbxFontStatus.Text = Localization.T("Failed to replace font");
         }
     }
 
     private void ResetRobloxFont_Click(object sender, RoutedEventArgs e)
     {
-        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _rbxFontStatus.Text = "Close Roblox first"; return; }
-        var player = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
-        if (player == null) { _rbxFontStatus.Text = "Roblox not found"; return; }
-        var fontsDir = Path.Combine(player, "Content", "fonts");
+        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _rbxFontStatus.Text = Localization.T("Closing Roblox..."); foreach (var p in Process.GetProcessesByName("RobloxPlayerBeta")) try { p.Kill(); } catch { } Thread.Sleep(1500); }
         if (!Directory.Exists(FontBackupDir) || Directory.GetFiles(FontBackupDir).Length == 0)
         {
-            _rbxFontStatus.Text = "No font backup found";
+            _rbxFontStatus.Text = Localization.T("No font backup found");
             return;
         }
         try
         {
-            Directory.CreateDirectory(fontsDir);
-            foreach (var f in Directory.GetFiles(FontBackupDir))
-                File.Copy(f, Path.Combine(fontsDir, Path.GetFileName(f)), true);
-            _rbxFontStatus.Text = "Original font restored";
+            foreach (var pf in RobloxLauncher.FindPlayerFolders())
+            {
+                var fontsDir = Path.Combine(pf, "Content", "fonts");
+                if (!Directory.Exists(fontsDir)) continue;
+                foreach (var f in Directory.GetFiles(FontBackupDir))
+                    File.Copy(f, Path.Combine(fontsDir, Path.GetFileName(f)), true);
+            }
+            _config.FontName = "Segoe UI";
+            RobloxLauncher.SaveConfig(_config);
+            _rbxFontStatus.Text = Localization.T("Original font restored");
         }
         catch
         {
-            _rbxFontStatus.Text = "Failed to restore font";
+            _rbxFontStatus.Text = Localization.T("Failed to restore font");
         }
     }
 
@@ -1371,6 +1704,921 @@ public partial class MainWindow : Window
     private void ResetFlags_Click(object sender, RoutedEventArgs e)
     {
         _flagsStatus.Text = RobloxLauncher.ResetFlags();
+    }
+
+    private static string? FindRobloxCursorsFolder()
+    {
+        var list = FindAllRobloxCursorsFolders();
+        return list.FirstOrDefault();
+    }
+
+    private static List<string> FindAllRobloxCursorsFolders()
+    {
+        var versionsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Roblox", "Versions");
+        var result = new List<string>();
+        if (!Directory.Exists(versionsDir)) return result;
+        foreach (var dir in Directory.GetDirectories(versionsDir).OrderByDescending(d => File.GetLastWriteTime(Path.Combine(d, "RobloxPlayerBeta.exe"))))
+        {
+            var cursorPath = Path.Combine(dir, "content", "textures", "Cursors", "KeyboardMouse");
+            if (Directory.Exists(cursorPath) && File.Exists(Path.Combine(dir, "RobloxPlayerBeta.exe")))
+                result.Add(cursorPath);
+        }
+        return result;
+    }
+
+    private static void EnsureMigratedBackups()
+    {
+        // Migrate old per-version NaxiBackup/Cursors -> central CursorBackupDir
+        try
+        {
+            var versionsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Roblox", "Versions");
+            if (!Directory.Exists(versionsDir)) return;
+            foreach (var dir in Directory.GetDirectories(versionsDir))
+            {
+                var oldBackup = Path.Combine(dir, "content", "NaxiBackup", "Cursors");
+                if (!Directory.Exists(oldBackup)) continue;
+                Directory.CreateDirectory(CursorBackupDir);
+                foreach (var f in Directory.GetFiles(oldBackup, "*.png"))
+                {
+                    var dest = Path.Combine(CursorBackupDir, Path.GetFileName(f));
+                    if (!File.Exists(dest)) File.Copy(f, dest, false);
+                }
+            }
+        } catch { }
+    }
+
+    private static void MigrateCustomizationsIfNeeded(AppConfig config, string oldVersion, string newVersion)
+    {
+        try
+        {
+            var versionsRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Roblox", "Versions");
+            var oldRoot = Path.Combine(versionsRoot, oldVersion);
+            var newRoot = Path.Combine(versionsRoot, newVersion);
+            if (!Directory.Exists(newRoot)) return;
+
+            // --- Cursors: reapply from central config/cache or copy from old version ---
+            try
+            {
+                var newCursors = Path.Combine(newRoot, "content", "textures", "Cursors", "KeyboardMouse");
+                var newTex = Path.Combine(newRoot, "content", "textures");
+                if (Directory.Exists(newCursors))
+                {
+                    // Prefer config paths (user's custom PNGs)
+                    bool hasConfig = !string.IsNullOrEmpty(config.NormalCursorPath) || !string.IsNullOrEmpty(config.PointingCursorPath) || !string.IsNullOrEmpty(config.ShiftCursorPath) || !string.IsNullOrEmpty(config.IBeamCursorPath);
+                    if (hasConfig)
+                    {
+                        if (!string.IsNullOrEmpty(config.NormalCursorPath) && File.Exists(config.NormalCursorPath))
+                            File.Copy(config.NormalCursorPath, Path.Combine(newCursors, "ArrowFarCursor.png"), true);
+                        if (!string.IsNullOrEmpty(config.PointingCursorPath) && File.Exists(config.PointingCursorPath))
+                            File.Copy(config.PointingCursorPath, Path.Combine(newCursors, "ArrowCursor.png"), true);
+                        if (!string.IsNullOrEmpty(config.ShiftCursorPath) && File.Exists(config.ShiftCursorPath))
+                        {
+                            File.Copy(config.ShiftCursorPath, Path.Combine(newCursors, "MouseLockedCursor.png"), true);
+                            var destTex = Path.Combine(newTex, "MouseLockedCursor.png");
+                            File.Copy(config.ShiftCursorPath, destTex, true);
+                        }
+                        if (!string.IsNullOrEmpty(config.IBeamCursorPath) && File.Exists(config.IBeamCursorPath))
+                            File.Copy(config.IBeamCursorPath, Path.Combine(newCursors, "IBeamCursor.png"), true);
+                    }
+                    else if (Directory.Exists(oldRoot))
+                    {
+                        // Fallback: copy customized cursors from old version if they differ from backup (i.e. were customized)
+                        var oldCursors = Path.Combine(oldRoot, "content", "textures", "Cursors", "KeyboardMouse");
+                        var oldTex = Path.Combine(oldRoot, "content", "textures");
+                        if (Directory.Exists(oldCursors))
+                        {
+                            foreach (var name in new[] { "ArrowFarCursor.png", "ArrowCursor.png", "MouseLockedCursor.png", "IBeamCursor.png" })
+                            {
+                                var oldFile = Path.Combine(oldCursors, name);
+                                var newFile = Path.Combine(newCursors, name);
+                                var backupFile = Path.Combine(CursorBackupDir, name);
+                                if (!File.Exists(oldFile)) continue;
+                                bool isCustom = !File.Exists(backupFile) || new FileInfo(oldFile).Length != new FileInfo(backupFile).Length;
+                                // also compare content if same length but different: assume custom if old differs from current new default
+                                if (isCustom && File.Exists(newFile))
+                                {
+                                    // if new is default (same as backup or freshly installed), overwrite with old custom
+                                    File.Copy(oldFile, newFile, true);
+                                }
+                            }
+                            var oldTexFile = Path.Combine(oldTex, "MouseLockedCursor.png");
+                            var newTexFile = Path.Combine(newTex, "MouseLockedCursor.png");
+                            if (File.Exists(oldTexFile) && File.Exists(newTexFile))
+                            {
+                                var bak = Path.Combine(CursorBackupDir, "MouseLockedCursor.png");
+                                bool isCustom = !File.Exists(bak) || new FileInfo(oldTexFile).Length != new FileInfo(bak).Length;
+                                if (isCustom) File.Copy(oldTexFile, newTexFile, true);
+                            }
+                        }
+                    }
+                }
+            } catch { }
+
+            // --- Sky: if we have cached custom sky, reapply; else copy from old version ---
+            try
+            {
+                var newSky = Path.Combine(newRoot, "PlatformContent", "pc", "textures", "sky");
+                var oldSky = Path.Combine(oldRoot, "PlatformContent", "pc", "textures", "sky");
+                if (Directory.Exists(CustomSkyCacheDir) && Directory.GetFiles(CustomSkyCacheDir, "*.tex").Length > 0 && Directory.Exists(newSky))
+                {
+                    foreach (var f in Directory.GetFiles(CustomSkyCacheDir, "*.tex"))
+                        File.Copy(f, Path.Combine(newSky, Path.GetFileName(f)), true);
+                }
+                else if (Directory.Exists(oldSky) && Directory.Exists(newSky) && Directory.Exists(SkyBackupDir) && Directory.GetFiles(SkyBackupDir).Length > 0)
+                {
+                    var hasCustom = Directory.GetFiles(oldSky, "*.tex").Any(f => {
+                        var bak = Path.Combine(SkyBackupDir, Path.GetFileName(f));
+                        return File.Exists(bak) && new FileInfo(f).Length != new FileInfo(bak).Length;
+                    });
+                    if (hasCustom)
+                    {
+                        foreach (var f in Directory.GetFiles(oldSky, "*.tex"))
+                            File.Copy(f, Path.Combine(newSky, Path.GetFileName(f)), true);
+                    }
+                }
+            } catch { }
+
+            // --- Font: same logic ---
+            try
+            {
+                var newFonts = Path.Combine(newRoot, "Content", "fonts");
+                var oldFonts = Path.Combine(oldRoot, "Content", "fonts");
+                if (File.Exists(CustomFontPath_File) && Directory.Exists(newFonts))
+                {
+                    var targets = Directory.GetFiles(newFonts, "*.*").Where(f => f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase)).ToArray();
+                    foreach (var t in targets) File.Copy(CustomFontPath_File, t, true);
+                }
+                else if (Directory.Exists(oldFonts) && Directory.Exists(newFonts) && Directory.Exists(FontBackupDir) && Directory.GetFiles(FontBackupDir).Length > 0)
+                {
+                    var oldFontFiles = Directory.GetFiles(oldFonts, "*.*").Where(f => f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase)).ToArray();
+                    var hasCustom = oldFontFiles.Any(f => {
+                        var bak = Path.Combine(FontBackupDir, Path.GetFileName(f));
+                        return File.Exists(bak) && new FileInfo(f).Length != new FileInfo(bak).Length;
+                    });
+                    if (hasCustom)
+                    {
+                        foreach (var f in oldFontFiles)
+                            File.Copy(f, Path.Combine(newFonts, Path.GetFileName(f)), true);
+                    }
+                }
+            } catch { }
+
+            // --- Emote wheel: reapply from cache or copy from old version ---
+            try
+            {
+                var newEmotes = Path.Combine(newRoot, "content", "textures", "ui", "Emotes", "Large");
+                var oldEmotes = Path.Combine(oldRoot, "content", "textures", "ui", "Emotes", "Large");
+                if (!Directory.Exists(newEmotes)) return;
+
+                string ResolveEmote(string cfgPath, string cacheName)
+                {
+                    if (!string.IsNullOrEmpty(cfgPath) && File.Exists(cfgPath)) return cfgPath;
+                    var cached = Path.Combine(CustomEmoteCacheDir, cacheName);
+                    if (File.Exists(cached)) return cached;
+                    return "";
+                }
+
+                bool hasConfig = !string.IsNullOrEmpty(config.EmoteCircleBgPath) || !string.IsNullOrEmpty(config.EmoteSegmentedPath) || !string.IsNullOrEmpty(config.EmoteGradientPath) || !string.IsNullOrEmpty(config.EmoteSelectedLinePath);
+                if (hasConfig)
+                {
+                    var map = new[] { ("CircleBackground", config.EmoteCircleBgPath), ("SegmentedCircle", config.EmoteSegmentedPath), ("SelectedGradient", config.EmoteGradientPath), ("SelectedLine", config.EmoteSelectedLinePath) };
+                    foreach (var (baseName, cfgVal) in map)
+                    {
+                        var src = ResolveEmote(cfgVal, $"{baseName}.png");
+                        if (!string.IsNullOrEmpty(src))
+                            foreach (var s in EmoteSuffixes) File.Copy(src, Path.Combine(newEmotes, $"{baseName}{s}.png"), true);
+                    }
+                }
+                else if (Directory.Exists(oldEmotes) && Directory.Exists(EmoteBackupDir))
+                {
+                    // Check if old version was customized by comparing file sizes with backup
+                    bool isCustom = false;
+                    foreach (var baseName in EmoteFileNames)
+                    {
+                        var oldFile = Path.Combine(oldEmotes, $"{baseName}.png");
+                        var bak = Path.Combine(EmoteBackupDir, $"{baseName}.png");
+                        if (File.Exists(oldFile) && File.Exists(bak) && new FileInfo(oldFile).Length != new FileInfo(bak).Length) { isCustom = true; break; }
+                    }
+                    if (isCustom)
+                    {
+                        foreach (var baseName in EmoteFileNames)
+                            foreach (var s in EmoteSuffixes)
+                            {
+                                var src = Path.Combine(oldEmotes, $"{baseName}{s}.png");
+                                var dest = Path.Combine(newEmotes, $"{baseName}{s}.png");
+                                if (File.Exists(src)) File.Copy(src, dest, true);
+                            }
+                    }
+                }
+            } catch { }
+        } catch { }
+    }
+
+    private void ApplySavedCursors()
+    {
+        EnsureMigratedBackups();
+        var allDirs = FindAllRobloxCursorsFolders();
+        if (allDirs.Count == 0) return;
+        // create central backup if missing
+        try
+        {
+            Directory.CreateDirectory(CursorBackupDir);
+            foreach (var cursorsDir in allDirs)
+            {
+                var texFile = Path.Combine(cursorsDir, "..", "..", "MouseLockedCursor.png");
+                foreach (var (name, src) in new[] { ("ArrowFarCursor.png", Path.Combine(cursorsDir, "ArrowFarCursor.png")), ("ArrowCursor.png", Path.Combine(cursorsDir, "ArrowCursor.png")), ("MouseLockedCursor.png", Path.Combine(cursorsDir, "MouseLockedCursor.png")), ("IBeamCursor.png", Path.Combine(cursorsDir, "IBeamCursor.png")) })
+                {
+                    var bak = Path.Combine(CursorBackupDir, name);
+                    if (!File.Exists(bak) && File.Exists(src)) File.Copy(src, bak, false);
+                }
+                if (File.Exists(texFile))
+                {
+                    var bak = Path.Combine(CursorBackupDir, "MouseLockedCursor.png");
+                    if (!File.Exists(bak)) File.Copy(texFile, bak, false);
+                }
+            }
+        } catch { }
+
+        foreach (var cursorsDir in allDirs)
+        {
+            try
+            {
+                string ResolveCursor(string cfgPath, string cacheName)
+                {
+                    if (!string.IsNullOrEmpty(cfgPath) && File.Exists(cfgPath)) return cfgPath;
+                    var cached = Path.Combine(CustomCursorCacheDir, cacheName);
+                    if (File.Exists(cached)) return cached;
+                    return "";
+                }
+                var normalSrc = ResolveCursor(_config.NormalCursorPath, "ArrowFarCursor.png");
+                if (!string.IsNullOrEmpty(normalSrc)) File.Copy(normalSrc, Path.Combine(cursorsDir, "ArrowFarCursor.png"), true);
+                var pointSrc = ResolveCursor(_config.PointingCursorPath, "ArrowCursor.png");
+                if (!string.IsNullOrEmpty(pointSrc)) File.Copy(pointSrc, Path.Combine(cursorsDir, "ArrowCursor.png"), true);
+                var shiftSrc = ResolveCursor(_config.ShiftCursorPath, "MouseLockedCursor.png");
+                if (!string.IsNullOrEmpty(shiftSrc))
+                {
+                    File.Copy(shiftSrc, Path.Combine(cursorsDir, "MouseLockedCursor.png"), true);
+                    var destTex = Path.Combine(cursorsDir, "..", "..", "MouseLockedCursor.png");
+                    File.Copy(shiftSrc, destTex, true);
+                }
+                var ibeamSrc = ResolveCursor(_config.IBeamCursorPath, "IBeamCursor.png");
+                if (!string.IsNullOrEmpty(ibeamSrc)) File.Copy(ibeamSrc, Path.Combine(cursorsDir, "IBeamCursor.png"), true);
+            } catch { }
+        }
+    }
+
+    private Grid BuildCursors()
+    {
+        // recreate preview images to avoid "already the logical child" error on rebuild
+        _normalCursorPreview = new Image();
+        _pointingCursorPreview = new Image();
+        _shiftCursorPreview = new Image();
+        _ibeamCursorPreview = new Image();
+        _normalCursorPath = new TextBlock();
+        _pointingCursorPath = new TextBlock();
+        _shiftCursorPath = new TextBlock();
+        _ibeamCursorPath = new TextBlock();
+        _cursorStatus = new TextBlock();
+        var g = new Grid();
+        g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        g.Margin = new Thickness(72, 22, 40, 0);
+
+        var title = new StackPanel();
+        title.Children.Add(T("Cursors", 26, (Brush)FindResource("Text"), true));
+        Grid.SetRow(title, 0); g.Children.Add(title);
+
+        var host = new StackPanel { Margin = new Thickness(0, 20, 0, 0) };
+        host.Children.Add(T("Replace Roblox cursors with custom PNG images. Originals are backed up automatically.", 13, (Brush)FindResource("Muted"), false));
+
+        var cursorsDir = FindRobloxCursorsFolder();
+        if (cursorsDir == null)
+        {
+            host.Children.Add(T("Roblox installation not found.", 14, (Brush)FindResource("Muted"), false));
+            var scroll2 = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = host, ClipToBounds = true };
+            SmoothScroll.SetEnabled(scroll2, true);
+            Grid.SetRow(scroll2, 1); g.Children.Add(scroll2);
+            return g;
+        }
+
+        string ResolveShow(string cfgPath, string cacheName)
+        {
+            if (!string.IsNullOrEmpty(cfgPath) && File.Exists(cfgPath)) return cfgPath;
+            var cached = Path.Combine(CustomCursorCacheDir, cacheName);
+            if (File.Exists(cached)) return cached;
+            return "";
+        }
+        var n = ResolveShow(_config.NormalCursorPath, "ArrowFarCursor.png");
+        if (!string.IsNullOrEmpty(n)) _normalCursorFile = n;
+        var p = ResolveShow(_config.PointingCursorPath, "ArrowCursor.png");
+        if (!string.IsNullOrEmpty(p)) _pointingCursorFile = p;
+        var s = ResolveShow(_config.ShiftCursorPath, "MouseLockedCursor.png");
+        if (!string.IsNullOrEmpty(s)) _shiftCursorFile = s;
+        var ib = ResolveShow(_config.IBeamCursorPath, "IBeamCursor.png");
+        if (!string.IsNullOrEmpty(ib)) _ibeamCursorFile = ib;
+
+        var normalCard = CursorCard("Normal Cursor", "ArrowFarCursor.png — default pointer", () => _normalCursorFile, v => _normalCursorFile = v, v => _config.NormalCursorPath = v, () => _normalCursorPath, _normalCursorPreview, cursorsDir);
+        host.Children.Add(normalCard);
+
+        var pointingCard = CursorCard("Pointing Cursor", "ArrowCursor.png — hover over buttons", () => _pointingCursorFile, v => _pointingCursorFile = v, v => _config.PointingCursorPath = v, () => _pointingCursorPath, _pointingCursorPreview, cursorsDir);
+        host.Children.Add(pointingCard);
+
+        var shiftCard = CursorCard("Shift-Lock Cursor", "MouseLockedCursor.png — crosshair when shift-locked", () => _shiftCursorFile, v => _shiftCursorFile = v, v => _config.ShiftCursorPath = v, () => _shiftCursorPath, _shiftCursorPreview, Path.Combine(cursorsDir, "..", ".."));
+        host.Children.Add(shiftCard);
+
+        var ibeamCard = CursorCard("IBeam Cursor", "IBeamCursor.png — text input cursor", () => _ibeamCursorFile, v => _ibeamCursorFile = v, v => _config.IBeamCursorPath = v, () => _ibeamCursorPath, _ibeamCursorPreview, cursorsDir);
+        host.Children.Add(ibeamCard);
+
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 20, 0, 0) };
+        var applyBtn = Btn("Apply Cursors", true, 180);
+        applyBtn.Click += ApplyCursors_Click;
+        var resetBtn = Btn("Reset to Default", false, 180);
+        resetBtn.Margin = new Thickness(12, 0, 0, 0);
+        resetBtn.Click += ResetCursors_Click;
+        _cursorStatus = T("", 12.5, (Brush)FindResource("Muted"), false);
+        _cursorStatus.VerticalAlignment = VerticalAlignment.Center;
+        _cursorStatus.Margin = new Thickness(14, 0, 0, 0);
+        btnRow.Children.Add(applyBtn);
+        btnRow.Children.Add(resetBtn);
+        btnRow.Children.Add(_cursorStatus);
+        host.Children.Add(btnRow);
+
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = host, ClipToBounds = true };
+        SmoothScroll.SetEnabled(scroll, true);
+        Grid.SetRow(scroll, 1); g.Children.Add(scroll);
+
+        RefreshCursorPreviews();
+
+        return g;
+    }
+
+    private Border CursorCard(string title, string desc, Func<string?> getFilePath, Action<string> setFilePath, Action<string> saveToConfig, Func<TextBlock?> getPathText, Image preview, string cursorsDir)
+    {
+        var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(22), Margin = new Thickness(0, 12, 0, 0) };
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+
+        var previewBorder = new Border { Width = 48, Height = 48, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromRgb(30, 34, 42)), ClipToBounds = true };
+        preview.Width = 48; preview.Height = 48; preview.Stretch = Stretch.UniformToFill;
+        var currentFile = getFilePath();
+        if (currentFile != null)
+            previewBorder.Child = preview;
+        else
+            previewBorder.Child = new TextBlock { Text = "?", FontSize = 20, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Muted") };
+        Grid.SetColumn(previewBorder, 0); grid.Children.Add(previewBorder);
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
+        info.Children.Add(T(title, 15, (Brush)FindResource("Text"), true));
+        info.Children.Add(T(desc, 12, (Brush)FindResource("Muted"), false, 3));
+        var pathText = T(currentFile != null ? Path.GetFileName(currentFile) : "Default", 11.5, (Brush)FindResource("Muted"), false);
+        info.Children.Add(pathText);
+
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+        var importBtn = Btn("Import", false, 100);
+        importBtn.Click += (_, _) =>
+        {
+            var ofd = new Microsoft.Win32.OpenFileDialog { Filter = "PNG files (*.png)|*.png", Title = $"Select {title}" };
+            if (ofd.ShowDialog() == true)
+            {
+                setFilePath(ofd.FileName);
+                saveToConfig(ofd.FileName);
+                RobloxLauncher.SaveConfig(_config);
+                try
+                {
+                    // cache copy so it survives even if original deleted and survives Roblox updates
+                    Directory.CreateDirectory(CustomCursorCacheDir);
+                    string cacheName = title.Contains("Normal") ? "ArrowFarCursor.png" : title.Contains("Pointing") ? "ArrowCursor.png" : title.Contains("IBeam") ? "IBeamCursor.png" : "MouseLockedCursor.png";
+                    File.Copy(ofd.FileName, Path.Combine(CustomCursorCacheDir, cacheName), true);
+                } catch { }
+                try
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(ofd.FileName);
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    preview.Source = bmp;
+                    previewBorder.Child = preview;
+                } catch { }
+                pathText.Text = Path.GetFileName(ofd.FileName);
+                pathText.Foreground = (Brush)FindResource("Text");
+            }
+        };
+        btnRow.Children.Add(importBtn);
+        info.Children.Add(btnRow);
+
+        Grid.SetColumn(info, 1); grid.Children.Add(info);
+        card.Child = grid;
+        return card;
+    }
+
+    private void RefreshCursorPreviews()
+    {
+        var cursorsDir = FindRobloxCursorsFolder();
+        if (cursorsDir == null) return;
+
+        LoadCursorPreview(_normalCursorPreview, Path.Combine(cursorsDir, "ArrowFarCursor.png"), _normalCursorFile);
+        LoadCursorPreview(_pointingCursorPreview, Path.Combine(cursorsDir, "ArrowCursor.png"), _pointingCursorFile);
+        LoadCursorPreview(_shiftCursorPreview, Path.Combine(cursorsDir, "MouseLockedCursor.png"), _shiftCursorFile);
+        LoadCursorPreview(_ibeamCursorPreview, Path.Combine(cursorsDir, "IBeamCursor.png"), _ibeamCursorFile);
+    }
+
+    private void LoadCursorPreview(Image preview, string defaultPath, string? customFile)
+    {
+        try
+        {
+            var path = customFile ?? defaultPath;
+            if (!File.Exists(path)) return;
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(path);
+            bmp.EndInit();
+            bmp.Freeze();
+            preview.Source = bmp;
+        } catch { }
+    }
+
+    private void LoadEmotePreview(Image preview, string? customFile)
+    {
+        if (string.IsNullOrEmpty(customFile)) return;
+        try
+        {
+            if (!File.Exists(customFile)) return;
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(customFile);
+            bmp.EndInit();
+            bmp.Freeze();
+            preview.Source = bmp;
+        } catch { }
+    }
+
+    private void ApplyCursors_Click(object sender, RoutedEventArgs e)
+    {
+        var cursorsDir = FindRobloxCursorsFolder();
+        if (cursorsDir == null) { _cursorStatus.Text = Localization.T("Roblox not found"); return; }
+        ApplyCursors(cursorsDir);
+    }
+
+    private void ApplyCursors(string cursorsDir)
+    {
+        try
+        {
+            EnsureMigratedBackups();
+            Directory.CreateDirectory(CursorBackupDir);
+            // ensure backup exists from first found version
+            var firstBackupDone = false;
+            foreach (var dir in FindAllRobloxCursorsFolders())
+            {
+                if (firstBackupDone) break;
+                var tex = Path.Combine(dir, "..", "..", "MouseLockedCursor.png");
+                foreach (var (name, src) in new[] { ("ArrowFarCursor.png", Path.Combine(dir, "ArrowFarCursor.png")), ("ArrowCursor.png", Path.Combine(dir, "ArrowCursor.png")), ("MouseLockedCursor.png", Path.Combine(dir, "MouseLockedCursor.png")) })
+                {
+                    var bak = Path.Combine(CursorBackupDir, name);
+                    if (!File.Exists(bak) && File.Exists(src)) File.Copy(src, bak, false);
+                }
+                if (File.Exists(tex))
+                {
+                    var bak = Path.Combine(CursorBackupDir, "MouseLockedCursor.png");
+                    if (!File.Exists(bak)) File.Copy(tex, bak, false);
+                }
+                firstBackupDone = true;
+            }
+
+            int applied = 0;
+            // save config cursors already done on Import, but ensure central cache: copy source files to AppData for safety if original deleted later? We keep path as-is.
+            var allDirs = FindAllRobloxCursorsFolders();
+            if (allDirs.Count == 0) allDirs = new List<string> { cursorsDir };
+            foreach (var dir in allDirs)
+            {
+                if (_normalCursorFile != null && File.Exists(_normalCursorFile))
+                {
+                    File.Copy(_normalCursorFile, Path.Combine(dir, "ArrowFarCursor.png"), true);
+                }
+                if (_pointingCursorFile != null && File.Exists(_pointingCursorFile))
+                {
+                    File.Copy(_pointingCursorFile, Path.Combine(dir, "ArrowCursor.png"), true);
+                }
+                if (_shiftCursorFile != null && File.Exists(_shiftCursorFile))
+                {
+                    File.Copy(_shiftCursorFile, Path.Combine(dir, "MouseLockedCursor.png"), true);
+                    var destTex = Path.Combine(dir, "..", "..", "MouseLockedCursor.png");
+                    File.Copy(_shiftCursorFile, destTex, true);
+                }
+            }
+            if (_normalCursorFile != null && File.Exists(_normalCursorFile)) applied++;
+            if (_pointingCursorFile != null && File.Exists(_pointingCursorFile)) applied++;
+            if (_shiftCursorFile != null && File.Exists(_shiftCursorFile)) applied++;
+
+            if (_cursorStatus != null)
+            {
+                _cursorStatus.Text = applied > 0 ? $"Applied {applied} cursor(s) to {allDirs.Count} version(s)" : "No cursors selected";
+                _cursorStatus.Foreground = (Brush)FindResource("Accent");
+            }
+            // persist version after apply
+            var curr = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
+            if (curr != null) { _config.RobloxVersion = Path.GetFileName(curr); RobloxLauncher.SaveConfig(_config); }
+        }
+        catch (Exception ex) { if (_cursorStatus != null) _cursorStatus.Text = $"Error: {ex.Message}"; }
+    }
+
+    private static bool TryExtractEmbeddedDefault(string resourceName, string destPath)
+    {
+        try
+        {
+            var asm = typeof(MainWindow).Assembly;
+            var fullName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(resourceName, StringComparison.OrdinalIgnoreCase));
+            if (fullName == null) return false;
+            using var s = asm.GetManifestResourceStream(fullName);
+            if (s == null || s.Length == 0) return false;
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            using var fs = File.Create(destPath);
+            s.CopyTo(fs);
+            return true;
+        } catch { return false; }
+    }
+
+    private void ResetCursors_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var allDirs = FindAllRobloxCursorsFolders();
+            if (allDirs.Count == 0) { _cursorStatus.Text = Localization.T("Roblox not found"); return; }
+
+            int restored = 0;
+            int deleted = 0;
+            foreach (var dir in allDirs)
+            {
+                try
+                {
+                    var map = new[]
+                    {
+                        (res: "ArrowFarCursor.png", dest: Path.Combine(dir, "ArrowFarCursor.png")),
+                        (res: "ArrowCursor.png", dest: Path.Combine(dir, "ArrowCursor.png")),
+                        (res: "MouseLockedCursor.png", dest: Path.Combine(dir, "MouseLockedCursor.png")),
+                        (res: "IBeamCursor.png", dest: Path.Combine(dir, "IBeamCursor.png")),
+                    };
+                    foreach (var (res, dest) in map)
+                    {
+                        if (TryExtractEmbeddedDefault(res, dest)) restored++;
+                        else if (File.Exists(dest)) { File.Delete(dest); deleted++; }
+                    }
+                    var texDest = Path.Combine(dir, "..", "..", "MouseLockedCursor.png");
+                    if (TryExtractEmbeddedDefault("MouseLockedCursor.png", texDest)) restored++;
+                    else if (File.Exists(texDest)) { File.Delete(texDest); deleted++; }
+                } catch { }
+            }
+            string statusMsg = restored > 0
+                ? $"Restored default cursors in {allDirs.Count} version(s) ({restored} files)"
+                : deleted > 0 ? $"Removed {deleted} file(s) in {allDirs.Count} version(s) — defaults will restore on next Roblox launch"
+                : "No custom cursors found";
+
+            _normalCursorFile = null; _pointingCursorFile = null; _shiftCursorFile = null; _ibeamCursorFile = null;
+            _config.NormalCursorPath = ""; _config.PointingCursorPath = ""; _config.ShiftCursorPath = ""; _config.IBeamCursorPath = "";
+            try { if (Directory.Exists(CustomCursorCacheDir)) foreach (var f in Directory.GetFiles(CustomCursorCacheDir, "*.png")) File.Delete(f); } catch { }
+            RobloxLauncher.SaveConfig(_config);
+            _cursors = BuildCursors();
+            PageHost.Content = _cursors;
+            _cursorStatus.Text = statusMsg;
+            _cursorStatus.Foreground = (Brush)FindResource("Accent");
+        }
+        catch (Exception ex) { _cursorStatus.Text = $"Error: {ex.Message}"; }
+    }
+
+    private static string? FindRobloxEmotesFolder()
+    {
+        var versionsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Roblox", "Versions");
+        if (!Directory.Exists(versionsDir)) return null;
+        string? newest = null;
+        var newestTime = DateTime.MinValue;
+        foreach (var dir in Directory.GetDirectories(versionsDir))
+        {
+            var emotesDir = Path.Combine(dir, "content", "textures", "ui", "Emotes", "Large");
+            if (!Directory.Exists(emotesDir)) continue;
+            var exe = Path.Combine(dir, "RobloxPlayerBeta.exe");
+            if (!File.Exists(exe)) continue;
+            var time = File.GetLastWriteTime(exe);
+            if (time > newestTime) { newestTime = time; newest = emotesDir; }
+        }
+        return newest;
+    }
+
+    private static List<string> FindAllRobloxEmotesFolders()
+    {
+        var versionsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Roblox", "Versions");
+        var result = new List<string>();
+        if (!Directory.Exists(versionsDir)) return result;
+        foreach (var dir in Directory.GetDirectories(versionsDir).OrderByDescending(d => File.GetLastWriteTime(Path.Combine(d, "RobloxPlayerBeta.exe"))))
+        {
+            var emotesDir = Path.Combine(dir, "content", "textures", "ui", "Emotes", "Large");
+            if (Directory.Exists(emotesDir) && File.Exists(Path.Combine(dir, "RobloxPlayerBeta.exe")))
+                result.Add(emotesDir);
+        }
+        return result;
+    }
+
+    private static readonly string[] EmoteFileNames = { "CircleBackground", "SegmentedCircle", "SelectedGradient", "SelectedLine" };
+    private static readonly string[] EmoteSuffixes = { "", "@2x", "@3x" };
+
+    private static bool TryExtractEmbeddedEmote(string baseName, string suffix, string destPath)
+    {
+        try
+        {
+            var asm = typeof(MainWindow).Assembly;
+            var resourceName = $"NaxiBootstrap.Assets.DefaultEmotes.{baseName}{suffix}.png";
+            var fullName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith($"{baseName}{suffix}.png", StringComparison.OrdinalIgnoreCase));
+            if (fullName == null) return false;
+            using var s = asm.GetManifestResourceStream(fullName);
+            if (s == null || s.Length == 0) return false;
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            using var fs = File.Create(destPath);
+            s.CopyTo(fs);
+            return true;
+        } catch { return false; }
+    }
+
+    private void EnsureEmoteBackups()
+    {
+        try
+        {
+            var emotesDir = FindRobloxEmotesFolder();
+            if (emotesDir == null) return;
+            Directory.CreateDirectory(EmoteBackupDir);
+            foreach (var baseName in EmoteFileNames)
+            {
+                foreach (var suffix in EmoteSuffixes)
+                {
+                    var file = Path.Combine(emotesDir, $"{baseName}{suffix}.png");
+                    var bak = Path.Combine(EmoteBackupDir, $"{baseName}{suffix}.png");
+                    if (!File.Exists(bak) && File.Exists(file)) File.Copy(file, bak, false);
+                }
+            }
+        } catch { }
+    }
+
+    private void ApplySavedEmotes()
+    {
+        EnsureEmoteBackups();
+        var allDirs = FindAllRobloxEmotesFolders();
+        if (allDirs.Count == 0) return;
+
+        string Resolve(string cfgPath, string cacheName)
+        {
+            if (!string.IsNullOrEmpty(cfgPath) && File.Exists(cfgPath)) return cfgPath;
+            var cached = Path.Combine(CustomEmoteCacheDir, cacheName);
+            if (File.Exists(cached)) return cached;
+            return "";
+        }
+
+        foreach (var dir in allDirs)
+        {
+            try
+            {
+                var bgSrc = Resolve(_config.EmoteCircleBgPath, "CircleBackground.png");
+                if (!string.IsNullOrEmpty(bgSrc))
+                    foreach (var s in EmoteSuffixes)
+                        File.Copy(bgSrc, Path.Combine(dir, $"CircleBackground{s}.png"), true);
+
+                var segSrc = Resolve(_config.EmoteSegmentedPath, "SegmentedCircle.png");
+                if (!string.IsNullOrEmpty(segSrc))
+                    foreach (var s in EmoteSuffixes)
+                        File.Copy(segSrc, Path.Combine(dir, $"SegmentedCircle{s}.png"), true);
+
+                var gradSrc = Resolve(_config.EmoteGradientPath, "SelectedGradient.png");
+                if (!string.IsNullOrEmpty(gradSrc))
+                    foreach (var s in EmoteSuffixes)
+                        File.Copy(gradSrc, Path.Combine(dir, $"SelectedGradient{s}.png"), true);
+
+                var lineSrc = Resolve(_config.EmoteSelectedLinePath, "SelectedLine.png");
+                if (!string.IsNullOrEmpty(lineSrc))
+                    foreach (var s in EmoteSuffixes)
+                        File.Copy(lineSrc, Path.Combine(dir, $"SelectedLine{s}.png"), true);
+            } catch { }
+        }
+    }
+
+    private Grid BuildEmotes()
+    {
+        _emoteCircleBgPreview = new Image();
+        _emoteSegmentedPreview = new Image();
+        _emoteGradientPreview = new Image();
+        _emoteSelectedLinePreview = new Image();
+        _emoteStatus = new TextBlock();
+        var g = new Grid();
+        g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        g.Margin = new Thickness(72, 22, 40, 0);
+
+        var title = new StackPanel();
+        title.Children.Add(T("Emote Wheel", 26, (Brush)FindResource("Text"), true));
+        Grid.SetRow(title, 0); g.Children.Add(title);
+
+        var host = new StackPanel { Margin = new Thickness(0, 20, 0, 0) };
+        host.Children.Add(T("Replace Roblox emote wheel textures with custom PNG images. Upload your own base image — @2x and @3x variants are applied automatically.", 13, (Brush)FindResource("Muted"), false));
+
+        var emotesDir = FindRobloxEmotesFolder();
+        if (emotesDir == null)
+        {
+            host.Children.Add(T("Roblox installation not found.", 14, (Brush)FindResource("Muted"), false));
+            var scroll2 = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = host, ClipToBounds = true };
+            SmoothScroll.SetEnabled(scroll2, true);
+            Grid.SetRow(scroll2, 1); g.Children.Add(scroll2);
+            return g;
+        }
+
+        string ResolveShow(string cfgPath, string cacheName)
+        {
+            if (!string.IsNullOrEmpty(cfgPath) && File.Exists(cfgPath)) return cfgPath;
+            var cached = Path.Combine(CustomEmoteCacheDir, cacheName);
+            if (File.Exists(cached)) return cached;
+            return "";
+        }
+        var bg = ResolveShow(_config.EmoteCircleBgPath, "CircleBackground.png");
+        if (!string.IsNullOrEmpty(bg)) _emoteCircleBgFile = bg;
+        var seg = ResolveShow(_config.EmoteSegmentedPath, "SegmentedCircle.png");
+        if (!string.IsNullOrEmpty(seg)) _emoteSegmentedFile = seg;
+        var grad = ResolveShow(_config.EmoteGradientPath, "SelectedGradient.png");
+        if (!string.IsNullOrEmpty(grad)) _emoteGradientFile = grad;
+        var line = ResolveShow(_config.EmoteSelectedLinePath, "SelectedLine.png");
+        if (!string.IsNullOrEmpty(line)) _emoteSelectedLineFile = line;
+
+        LoadEmotePreview(_emoteCircleBgPreview, _emoteCircleBgFile);
+        LoadEmotePreview(_emoteSegmentedPreview, _emoteSegmentedFile);
+        LoadEmotePreview(_emoteGradientPreview, _emoteGradientFile);
+        LoadEmotePreview(_emoteSelectedLinePreview, _emoteSelectedLineFile);
+
+        host.Children.Add(EmoteCard("Circle Background", "CircleBackground.png — background of the emote ring", () => _emoteCircleBgFile, v => _emoteCircleBgFile = v, v => _config.EmoteCircleBgPath = v, _emoteCircleBgPreview));
+        host.Children.Add(EmoteCard("Segmented Circle", "SegmentedCircle.png — dividing lines between slots", () => _emoteSegmentedFile, v => _emoteSegmentedFile = v, v => _config.EmoteSegmentedPath = v, _emoteSegmentedPreview));
+        host.Children.Add(EmoteCard("Selected Gradient", "SelectedGradient.png — highlight on active slot", () => _emoteGradientFile, v => _emoteGradientFile = v, v => _config.EmoteGradientPath = v, _emoteGradientPreview));
+        host.Children.Add(EmoteCard("Selected Line", "SelectedLine.png — thin line indicator", () => _emoteSelectedLineFile, v => _emoteSelectedLineFile = v, v => _config.EmoteSelectedLinePath = v, _emoteSelectedLinePreview));
+
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 20, 0, 0) };
+        var applyBtn = Btn("Apply Emotes", true, 180);
+        applyBtn.Click += ApplyEmotes_Click;
+        var resetBtn = Btn("Reset to Default", false, 180);
+        resetBtn.Margin = new Thickness(12, 0, 0, 0);
+        resetBtn.Click += ResetEmotes_Click;
+        _emoteStatus = T("", 12.5, (Brush)FindResource("Muted"), false);
+        _emoteStatus.VerticalAlignment = VerticalAlignment.Center;
+        _emoteStatus.Margin = new Thickness(14, 0, 0, 0);
+        btnRow.Children.Add(applyBtn);
+        btnRow.Children.Add(resetBtn);
+        btnRow.Children.Add(_emoteStatus);
+        host.Children.Add(btnRow);
+
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = host, ClipToBounds = true };
+        SmoothScroll.SetEnabled(scroll, true);
+        Grid.SetRow(scroll, 1); g.Children.Add(scroll);
+        return g;
+    }
+
+    private Border EmoteCard(string title, string desc, Func<string?> getFilePath, Action<string> setFilePath, Action<string> saveToConfig, Image preview)
+    {
+        var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(22), Margin = new Thickness(0, 12, 0, 0) };
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+
+        var previewBorder = new Border { Width = 48, Height = 48, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromRgb(30, 34, 42)), ClipToBounds = true };
+        preview.Width = 48; preview.Height = 48; preview.Stretch = Stretch.UniformToFill;
+        var currentFile = getFilePath();
+        if (currentFile != null)
+            previewBorder.Child = preview;
+        else
+            previewBorder.Child = new TextBlock { Text = "?", FontSize = 20, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Muted") };
+        Grid.SetColumn(previewBorder, 0); grid.Children.Add(previewBorder);
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
+        info.Children.Add(T(title, 15, (Brush)FindResource("Text"), true));
+        info.Children.Add(T(desc, 12, (Brush)FindResource("Muted"), false, 3));
+        var pathText = T(currentFile != null ? Path.GetFileName(currentFile) : "Default", 11.5, (Brush)FindResource("Muted"), false);
+        info.Children.Add(pathText);
+
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+        var importBtn = Btn("Import", false, 100);
+        importBtn.Click += (_, _) =>
+        {
+            var ofd = new Microsoft.Win32.OpenFileDialog { Filter = "PNG files (*.png)|*.png", Title = $"Select {title}" };
+            if (ofd.ShowDialog() == true)
+            {
+                setFilePath(ofd.FileName);
+                saveToConfig(ofd.FileName);
+                RobloxLauncher.SaveConfig(_config);
+                try
+                {
+                    Directory.CreateDirectory(CustomEmoteCacheDir);
+                    File.Copy(ofd.FileName, Path.Combine(CustomEmoteCacheDir, Path.GetFileName(getFilePath() != null ? Path.GetFileName(getFilePath()) : "emote.png")), true);
+                    // Also save with proper base name for ResolveShow
+                    var baseName = title.Contains("Background") ? "CircleBackground.png" : title.Contains("Segmented") ? "SegmentedCircle.png" : title.Contains("Gradient") ? "SelectedGradient.png" : "SelectedLine.png";
+                    File.Copy(ofd.FileName, Path.Combine(CustomEmoteCacheDir, baseName), true);
+                } catch { }
+                try
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(ofd.FileName);
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    preview.Source = bmp;
+                    previewBorder.Child = preview;
+                } catch { }
+                pathText.Text = Path.GetFileName(ofd.FileName);
+                pathText.Foreground = (Brush)FindResource("Text");
+            }
+        };
+        btnRow.Children.Add(importBtn);
+        info.Children.Add(btnRow);
+
+        Grid.SetColumn(info, 1); grid.Children.Add(info);
+        card.Child = grid;
+        return card;
+    }
+
+    private void ApplyEmotes_Click(object sender, RoutedEventArgs e)
+    {
+        var emotesDir = FindRobloxEmotesFolder();
+        if (emotesDir == null) { _emoteStatus.Text = Localization.T("Roblox not found"); return; }
+        ApplyEmotes(emotesDir);
+    }
+
+    private void ApplyEmotes(string emotesDir)
+    {
+        try
+        {
+            EnsureEmoteBackups();
+            int applied = 0;
+            var allDirs = FindAllRobloxEmotesFolders();
+            if (allDirs.Count == 0) allDirs = new List<string> { emotesDir };
+
+            foreach (var dir in allDirs)
+            {
+                if (_emoteCircleBgFile != null && File.Exists(_emoteCircleBgFile))
+                    foreach (var s in EmoteSuffixes) File.Copy(_emoteCircleBgFile, Path.Combine(dir, $"CircleBackground{s}.png"), true);
+                if (_emoteSegmentedFile != null && File.Exists(_emoteSegmentedFile))
+                    foreach (var s in EmoteSuffixes) File.Copy(_emoteSegmentedFile, Path.Combine(dir, $"SegmentedCircle{s}.png"), true);
+                if (_emoteGradientFile != null && File.Exists(_emoteGradientFile))
+                    foreach (var s in EmoteSuffixes) File.Copy(_emoteGradientFile, Path.Combine(dir, $"SelectedGradient{s}.png"), true);
+                if (_emoteSelectedLineFile != null && File.Exists(_emoteSelectedLineFile))
+                    foreach (var s in EmoteSuffixes) File.Copy(_emoteSelectedLineFile, Path.Combine(dir, $"SelectedLine{s}.png"), true);
+            }
+            if (_emoteCircleBgFile != null && File.Exists(_emoteCircleBgFile)) applied++;
+            if (_emoteSegmentedFile != null && File.Exists(_emoteSegmentedFile)) applied++;
+            if (_emoteGradientFile != null && File.Exists(_emoteGradientFile)) applied++;
+            if (_emoteSelectedLineFile != null && File.Exists(_emoteSelectedLineFile)) applied++;
+
+            _emoteStatus.Text = applied > 0 ? $"Applied {applied} texture(s) to {allDirs.Count} version(s)" : "No textures selected";
+            _emoteStatus.Foreground = (Brush)FindResource("Accent");
+            var curr = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
+            if (curr != null) { _config.RobloxVersion = Path.GetFileName(curr); RobloxLauncher.SaveConfig(_config); }
+        }
+        catch (Exception ex) { _emoteStatus.Text = $"Error: {ex.Message}"; }
+    }
+
+    private void ResetEmotes_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            EnsureEmoteBackups();
+            var allDirs = FindAllRobloxEmotesFolders();
+            if (allDirs.Count == 0) { _emoteStatus.Text = Localization.T("Roblox not found"); return; }
+
+            int restored = 0;
+            int deleted = 0;
+            foreach (var dir in allDirs)
+            {
+                try
+                {
+                    foreach (var baseName in EmoteFileNames)
+                    {
+                        foreach (var suffix in EmoteSuffixes)
+                        {
+                            var dest = Path.Combine(dir, $"{baseName}{suffix}.png");
+                            if (TryExtractEmbeddedEmote(baseName, suffix, dest)) restored++;
+                            else if (File.Exists(dest)) { File.Delete(dest); deleted++; }
+                        }
+                    }
+                } catch { }
+            }
+            string statusMsg = restored > 0
+                ? $"Restored default emotes in {allDirs.Count} version(s) ({restored} files)"
+                : deleted > 0 ? $"Removed {deleted} file(s) — defaults will restore on next Roblox launch"
+                : "No custom emotes found";
+
+            _emoteCircleBgFile = null; _emoteSegmentedFile = null; _emoteGradientFile = null; _emoteSelectedLineFile = null;
+            _config.EmoteCircleBgPath = ""; _config.EmoteSegmentedPath = ""; _config.EmoteGradientPath = ""; _config.EmoteSelectedLinePath = "";
+            try { if (Directory.Exists(CustomEmoteCacheDir)) foreach (var f in Directory.GetFiles(CustomEmoteCacheDir, "*.png")) File.Delete(f); } catch { }
+            RobloxLauncher.SaveConfig(_config);
+            _emotes = BuildEmotes();
+            PageHost.Content = _emotes;
+            _emoteStatus.Text = statusMsg;
+            _emoteStatus.Foreground = (Brush)FindResource("Accent");
+        }
+        catch (Exception ex) { _emoteStatus.Text = $"Error: {ex.Message}"; }
     }
 
     private Grid BuildMaintenance()
@@ -1480,7 +2728,7 @@ public partial class MainWindow : Window
     {
         var folders = RobloxLauncher.FindPlayerFolders();
         _installInfo.Text = folders.Count == 0
-            ? "Roblox is not installed"
+            ? Localization.T("Roblox is not installed")
             : $"Roblox {Path.GetFileName(folders[0])}" + (folders.Count > 1 ? $" (+{folders.Count - 1} more version(s))" : "");
     }
 
@@ -1499,11 +2747,7 @@ public partial class MainWindow : Window
 
     private void ResetRoblox_Click(object sender, RoutedEventArgs e)
     {
-        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0)
-        {
-            _installStatus.Text = "Close Roblox first";
-            return;
-        }
+        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { _installStatus.Text = Localization.T("Closing Roblox..."); foreach (var p in Process.GetProcessesByName("RobloxPlayerBeta")) try { p.Kill(); } catch { } Thread.Sleep(1500); }
 
         var confirm = MessageBox.Show(
             "This deletes the Roblox client files. Roblox will automatically re-download and reinstall on next launch.\n\nContinue?",
@@ -1511,7 +2755,7 @@ public partial class MainWindow : Window
         if (confirm != MessageBoxResult.Yes) return;
 
         var versions = Path.Combine(RobloxRoot, "Versions");
-        if (!Directory.Exists(versions)) { _installStatus.Text = "Roblox is not installed"; return; }
+        if (!Directory.Exists(versions)) { _installStatus.Text = Localization.T("Roblox is not installed"); return; }
 
         var failed = 0;
         foreach (var dir in Directory.GetDirectories(versions))
@@ -1599,6 +2843,63 @@ public partial class MainWindow : Window
         general.Child = gv;
         host.Children.Add(general);
 
+        var langCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
+        var lv = new StackPanel();
+        lv.Children.Add(SectionLabel("Language"));
+        lv.Children.Add(T("Choose launcher language. All texts will translate instantly.", 12.5, (Brush)FindResource("Muted"), false, 4));
+        var langRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+        foreach (var (name, lang) in new[] { ("English", Lang.En), ("Русский", Lang.Ru), ("Română", Lang.Ro), ("Français", Lang.Fr), ("日本語", Lang.Ja), ("Čeština", Lang.Cs) })
+        {
+            var isActive = Localization.Current == lang;
+            var b = Btn(name, isActive, 110); b.Margin = new Thickness(0, 0, 8, 0);
+            var l = lang;
+            b.Click += (_, _) => { Localization.Set(l); _config.Language = l.ToString(); RobloxLauncher.SaveConfig(_config); };
+            langRow.Children.Add(b);
+        }
+        lv.Children.Add(langRow);
+        langCard.Child = lv;
+        host.Children.Add(langCard);
+
+        var rpcCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
+        var rp = new StackPanel();
+        rp.Children.Add(SectionLabel("DISCORD RPC EDITOR"));
+        rp.Children.Add(T("Show custom Rich Presence in Discord. Requires Discord desktop app running. Large image must be uploaded in Discord Developer Portal → Rich Presence → Art Assets.", 12.5, (Brush)FindResource("Muted"), false, 4));
+        rp.Children.Add(ToggleRow("Enable Discord RPC", "Show presence when launcher is open. Updates live when you edit fields.", _config.DiscordRpcEnabled, v =>
+        {
+            _config.DiscordRpcEnabled = v;
+            RobloxLauncher.SaveConfig(_config);
+            if (v) DiscordRpcService.Start(_config); else DiscordRpcService.Stop();
+        }));
+        rp.Children.Add(ToggleRow("Show Elapsed Time", "Display timer since RPC started.", _config.DiscordRpcShowElapsed, v => { _config.DiscordRpcShowElapsed = v; RobloxLauncher.SaveConfig(_config); DiscordRpcService.Update(_config); }));
+
+        TextBox RpcInput(string label, string value, Action<string> onChange)
+        {
+            var row = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            var lb = T(label, 12.5, (Brush)FindResource("Muted"), false); lb.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(lb, 0); row.Children.Add(lb);
+            var tb = new TextBox { Style = (Style)FindResource("InputBox"), Text = value, Padding = new Thickness(10, 7, 10, 7), FontSize = 12.5 };
+            tb.TextChanged += (_, _) => { onChange(tb.Text); RobloxLauncher.SaveConfig(_config); DiscordRpcService.Update(_config); };
+            Grid.SetColumn(tb, 1); row.Children.Add(tb);
+            rp.Children.Add(row);
+            return tb;
+        }
+
+        RpcInput("Details (line 1)", _config.DiscordRpcDetails, v => _config.DiscordRpcDetails = v);
+        RpcInput("State (line 2)", _config.DiscordRpcState, v => _config.DiscordRpcState = v);
+        RpcInput("Large Image Key", _config.DiscordRpcLargeImage, v => _config.DiscordRpcLargeImage = v);
+        RpcInput("Large Image Text", _config.DiscordRpcLargeText, v => _config.DiscordRpcLargeText = v);
+
+        var rpcBtnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
+        var rpcTest = SmallBtn("Test / Refresh", true, 140); rpcTest.Click += (_, _) => { RobloxLauncher.SaveConfig(_config); DiscordRpcService.Update(_config); MessageBox.Show(DiscordRpcService.IsRunning ? "RPC sent! Check Discord profile." : "Not connected to Discord. Open Discord desktop app and try again.", "Discord RPC", MessageBoxButton.OK, DiscordRpcService.IsRunning ? MessageBoxImage.Information : MessageBoxImage.Warning); };
+        var rpcStop = SmallBtn("Stop", false, 90); rpcStop.Margin = new Thickness(8, 0, 0, 0); rpcStop.Click += (_, _) => DiscordRpcService.Stop();
+        rpcBtnRow.Children.Add(rpcTest); rpcBtnRow.Children.Add(rpcStop);
+        rp.Children.Add(rpcBtnRow);
+
+        rpcCard.Child = rp;
+        host.Children.Add(rpcCard);
+
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = host, ClipToBounds = true };
         SmoothScroll.SetEnabled(scroll, true);
         Grid.SetRow(scroll, 1); g.Children.Add(scroll);
@@ -1662,6 +2963,36 @@ public partial class MainWindow : Window
         row.Children.Add(info);
         card.Child = row;
         host.Children.Add(card);
+
+        var card2 = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(22), Margin = new Thickness(0, 12, 0, 0) };
+        var row2 = new StackPanel { Orientation = Orientation.Horizontal };
+        var avatar2 = new Border { Width = 64, Height = 64, CornerRadius = new CornerRadius(32), Background = Brushes.Transparent };
+        avatar2.Clip = new EllipseGeometry(new Point(32, 32), 32, 32);
+        var img2 = new Image { Width = 64, Height = 64, Stretch = Stretch.UniformToFill };
+        avatar2.Child = img2;
+        row2.Children.Add(avatar2);
+        var info2 = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(18, 0, 0, 0) };
+        info2.Children.Add(T("Liniks69", 22, (Brush)FindResource("Text"), true));
+        info2.Children.Add(T("Co-owner of Naxi Bootstrap", 13.5, (Brush)FindResource("Muted"), false, 4));
+        row2.Children.Add(info2);
+        card2.Child = row2;
+        host.Children.Add(card2);
+        _ = LoadAboutAvatar(img2, "https://i.pinimg.com/736x/af/60/bb/af60bb72c465711a8c7c13174bb40fe4.jpg");
+
+        var card3 = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(22), Margin = new Thickness(0, 12, 0, 0) };
+        var row3 = new StackPanel { Orientation = Orientation.Horizontal };
+        var avatar3 = new Border { Width = 64, Height = 64, CornerRadius = new CornerRadius(32), Background = Brushes.Transparent };
+        avatar3.Clip = new EllipseGeometry(new Point(32, 32), 32, 32);
+        var img3 = new Image { Width = 64, Height = 64, Stretch = Stretch.UniformToFill };
+        avatar3.Child = img3;
+        row3.Children.Add(avatar3);
+        var info3 = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(18, 0, 0, 0) };
+        info3.Children.Add(T("mxxnbyal", 22, (Brush)FindResource("Text"), true));
+        info3.Children.Add(T("Beta-Tester and Idea Creator", 13.5, (Brush)FindResource("Muted"), false, 4));
+        row3.Children.Add(info3);
+        card3.Child = row3;
+        host.Children.Add(card3);
+        _ = LoadAboutAvatar(img3, "https://media.discordapp.net/attachments/1541918313280442440/1541918335426367559/image.png?ex=6a8f56da&is=6a8e055a&hm=e6b1bc1183cfeb31a93fee3fb3932e454d89ad57329345d45ceba25ecc073f35&=&format=webp&quality=lossless");
 
         host.Children.Add(T("OFFICIAL LINKS", 11.5, (Brush)FindResource("Muted"), true).With(margin: new Thickness(0, 24, 0, 0)));
 
@@ -1783,6 +3114,22 @@ public partial class MainWindow : Window
         catch { }
     }
 
+    private async Task LoadAboutAvatar(Image img, string url)
+    {
+        try
+        {
+            var bytes = await Http.GetByteArrayAsync(url);
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.StreamSource = new MemoryStream(bytes);
+            bmp.EndInit();
+            bmp.Freeze();
+            img.Source = bmp;
+        }
+        catch { }
+    }
+
     private async void AddBrowserAccount_Click(object sender, RoutedEventArgs e)
     {
         _accountStatus.Text = "Waiting for Roblox login...";
@@ -1812,12 +3159,7 @@ public partial class MainWindow : Window
         }
         catch { }
 
-        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0)
-        {
-            RobloxLauncher.LogDebug(logFile, "Roblox is running, aborting");
-            _accountStatus.Text = "Close Roblox first";
-            return;
-        }
+        if (Process.GetProcessesByName("RobloxPlayerBeta").Length > 0) { RobloxLauncher.LogDebug(logFile, "Roblox running, auto-closing"); _accountStatus.Text = Localization.T("Closing Roblox..."); foreach (var p in Process.GetProcessesByName("RobloxPlayerBeta")) try { p.Kill(); } catch { } Thread.Sleep(1500); }
 
         var player = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
         if (player == null)
@@ -1893,6 +3235,194 @@ public partial class MainWindow : Window
         _accountStatus.Text = "Launching " + acc.Name + "...";
         Process.Start(Path.Combine(player, "RobloxPlayerBeta.exe"));
         Close();
+    }
+
+    private Border? _newsDetailOverlay;
+    private Grid BuildNews()
+    {
+        var g = new Grid();
+        g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        g.Margin = new Thickness(72, 22, 40, 0);
+        var title = new StackPanel();
+        title.Children.Add(T("News", 26, (Brush)FindResource("Text"), true));
+        Grid.SetRow(title, 0); g.Children.Add(title);
+        _newsList.Margin = new Thickness(0, 18, 0, 0);
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _newsList, ClipToBounds = true, Padding = new Thickness(0, 0, 12, 0) };
+        SmoothScroll.SetEnabled(scroll, true);
+        scroll.ScrollChanged += (_, e) =>
+        {
+            double o = Math.Clamp(e.VerticalOffset / 280.0, 0, 0.68);
+            foreach (Border c in _newsList.Children.OfType<Border>())
+            {
+                if (c.Tag is Border overlay)
+                    overlay.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.18 + o, TimeSpan.FromMilliseconds(140)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+            }
+        };
+        Grid.SetRow(scroll, 1); g.Children.Add(scroll);
+        _newsList.Children.Add(T("Loading news...", 13, (Brush)FindResource("Muted"), false, 20));
+        // detail overlay (hidden)
+        _newsDetailOverlay = new Border { Background = new SolidColorBrush(Color.FromArgb(210, 8, 10, 18)), CornerRadius = new CornerRadius(14), Visibility = Visibility.Collapsed, ClipToBounds = true };
+        _newsDetailOverlay.MouseLeftButtonDown += (_, _) => HideNewsDetail();
+        Grid.SetRowSpan(_newsDetailOverlay, 2); g.Children.Add(_newsDetailOverlay);
+        _ = LoadNewsAsync();
+        return g;
+    }
+
+    private async Task LoadNewsAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync(NewsUrl);
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var list = JsonSerializer.Deserialize<List<NewsEntry>>(json, opts);
+            if (list != null) RenderNews(list);
+        }
+        catch
+        {
+            if (_newsList.Children.Count == 1) { _newsList.Children.Clear(); _newsList.Children.Add(T("Could not load news. Check internet or news.json on GitHub.", 13, (Brush)FindResource("Muted"), false, 20)); }
+        }
+    }
+
+    private void RenderNews(List<NewsEntry> news)
+    {
+        _newsList.Children.Clear();
+        if (news.Count == 0) { _newsList.Children.Add(T("No news yet.", 13, (Brush)FindResource("Muted"), false, 20)); return; }
+        foreach (var n in news.OrderByDescending(x => { try { return DateTime.Parse(x.Date ?? ""); } catch { return DateTime.MinValue; } }))
+        {
+            var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(0), CornerRadius = new CornerRadius(16), Margin = new Thickness(0, 0, 0, 18), ClipToBounds = true, Background = new SolidColorBrush(Color.FromRgb(18, 21, 28)), Cursor = System.Windows.Input.Cursors.Hand };
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(280) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var imageWrapper = new Border { CornerRadius = new CornerRadius(16, 16, 0, 0), ClipToBounds = true, Background = new SolidColorBrush(Color.FromRgb(12, 15, 20)) };
+            imageWrapper.Loaded += (s, _) => { var b = (Border)s; b.Clip = new RectangleGeometry(new Rect(0, 0, b.ActualWidth, b.ActualHeight + 16), 16, 16); };
+            var imageHost = new Grid { ClipToBounds = true };
+            var newsImg = new Image { Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            RenderOptions.SetBitmapScalingMode(newsImg, BitmapScalingMode.HighQuality);
+            imageHost.Children.Add(newsImg);
+            if (!string.IsNullOrWhiteSpace(n.ImageUrl)) _ = LoadNewsImage(newsImg, n.ImageUrl);
+            var gradient = new Border { VerticalAlignment = VerticalAlignment.Bottom, Height = 140, Background = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1), GradientStops = { new GradientStop(Color.FromArgb(0, 0, 0, 0), 0), new GradientStop(Color.FromArgb(230, 14, 18, 32), 1) } } };
+            imageHost.Children.Add(gradient);
+            var grayOverlay = new Border { Background = new SolidColorBrush(Color.FromRgb(14, 18, 32)), Opacity = 0.22 };
+            imageHost.Children.Add(grayOverlay);
+            card.Tag = grayOverlay;
+            var titlePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(20, 0, 20, 18) };
+            var titleText = string.IsNullOrWhiteSpace(n.Title) ? n.Text.Split('\n').FirstOrDefault()?.Trim() ?? "Update" : n.Title!;
+            var t1 = new TextBlock { Text = titleText.ToUpper(), FontSize = 36, FontWeight = FontWeights.ExtraBold, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap };
+            try { if (!string.IsNullOrWhiteSpace(n.FontFamily)) t1.FontFamily = new FontFamily(n.FontFamily); } catch { }
+            titlePanel.Children.Add(t1);
+            var subtitle = string.IsNullOrWhiteSpace(n.Subtitle) ? "GAME UPDATE" : n.Subtitle!;
+            var sub = new TextBlock { Text = $"{subtitle}  Posted { (DateTime.TryParse(n.Date, out var d) ? d.ToString("MMMM d'th' yyyy", System.Globalization.CultureInfo.GetCultureInfo("en-US")) : n.Date ?? "") }", FontSize = 11, Foreground = new SolidColorBrush(Color.FromRgb(140, 145, 155)), Margin = new Thickness(0, 4, 0, 0), FontWeight = FontWeights.SemiBold };
+            titlePanel.Children.Add(sub);
+            imageHost.Children.Add(titlePanel);
+            var authorBadge = new Border { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(14, 14, 0, 0), Background = new SolidColorBrush(Color.FromArgb(170, 18, 21, 27)), CornerRadius = new CornerRadius(20), Padding = new Thickness(8, 5, 12, 5) };
+            var authorRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            var av = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(11), ClipToBounds = true, VerticalAlignment = VerticalAlignment.Center };
+            if (n.Author == "Foxzy") { av.Background = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 1), GradientStops = { new GradientStop(Color.FromRgb(143, 196, 234), 0), new GradientStop(Color.FromRgb(140, 130, 220), 1) } }; av.Child = new TextBlock { Text = "🦊", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }; }
+            else { var ai = new Image { Width = 22, Height = 22, Stretch = Stretch.UniformToFill }; av.Child = ai; var url = n.AvatarUrl; if (string.IsNullOrWhiteSpace(url)) url = n.Author == "Liniks69" ? "https://i.pinimg.com/736x/af/60/bb/af60bb72c465711a8c7c13174bb40fe4.jpg" : n.Author == "mxxnbyal" ? "https://media.discordapp.net/attachments/1541918313280442440/1541918335426367559/image.png?ex=6a8f56da&is=6a8e055a&hm=e6b1bc1183cfeb31a93fee3fb3932e454d89ad57329345d45ceba25ecc073f35&=&format=webp&quality=lossless" : ""; if (!string.IsNullOrWhiteSpace(url)) _ = LoadAboutAvatar(ai, url); }
+            authorRow.Children.Add(av);
+            authorRow.Children.Add(new TextBlock { Text = n.Author, FontSize = 11.5, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(7, 0, 0, 0) });
+            authorBadge.Child = authorRow;
+            imageHost.Children.Add(authorBadge);
+            bool isNew = false;
+            try { if (DateTime.TryParse(n.Date, out var isNewDate)) isNew = (DateTime.Now - isNewDate).TotalDays < 7; } catch { }
+            if (isNew)
+            {
+                var newTag = new Border { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 14, 14, 0), Background = new SolidColorBrush(Color.FromRgb(94, 156, 200)), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 4, 10, 4) };
+                newTag.Child = new TextBlock { Text = "NEW", FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(10, 20, 32)), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                imageHost.Children.Add(newTag);
+            }
+            imageWrapper.Child = imageHost;
+            Grid.SetRow(imageWrapper, 0); grid.Children.Add(imageWrapper);
+            var content = new StackPanel { Margin = new Thickness(20, 16, 20, 18) };
+            if (!string.IsNullOrWhiteSpace(n.Text))
+            {
+                var body = n.Text;
+                if (!string.IsNullOrWhiteSpace(n.Title) && body.StartsWith(n.Title!)) body = body.Substring(n.Title!.Length).TrimStart('\n', '\r', ' ');
+                var tb = new TextBlock { Text = body, FontSize = 13.5, Foreground = new SolidColorBrush(Color.FromRgb(220, 222, 228)), TextWrapping = TextWrapping.Wrap, LineHeight = 20, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, MaxHeight = 72, TextTrimming = TextTrimming.CharacterEllipsis };
+                if (!string.IsNullOrWhiteSpace(n.FontFamily)) { try { tb.FontFamily = new FontFamily(n.FontFamily); } catch { } }
+                content.Children.Add(tb);
+            }
+            Grid.SetRow(content, 1); grid.Children.Add(content);
+            card.Child = grid;
+            card.MouseLeftButtonDown += (_, _) => ShowNewsDetail(n);
+            _newsList.Children.Add(card);
+        }
+    }
+
+    private void ShowNewsDetail(NewsEntry n)
+    {
+        if (_newsDetailOverlay == null) return;
+        var outer = new Border { Background = new SolidColorBrush(Color.FromRgb(18, 21, 28)), CornerRadius = new CornerRadius(16), ClipToBounds = true, Margin = new Thickness(8) };
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(320) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var imageWrapper = new Border { CornerRadius = new CornerRadius(16, 16, 0, 0), ClipToBounds = true, Background = new SolidColorBrush(Color.FromRgb(12, 15, 20)) };
+        imageWrapper.Loaded += (s2, _) => { var b2 = (Border)s2; b2.Clip = new RectangleGeometry(new Rect(0, 0, b2.ActualWidth, b2.ActualHeight + 16), 16, 16); };
+        var imageHost = new Grid { ClipToBounds = true };
+        var im = new Image { Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        RenderOptions.SetBitmapScalingMode(im, BitmapScalingMode.HighQuality);
+        RenderOptions.SetCachingHint(im, CachingHint.Cache);
+        imageHost.Children.Add(im);
+        if (!string.IsNullOrWhiteSpace(n.ImageUrl)) _ = LoadNewsImage(im, n.ImageUrl);
+        var grad = new Border { VerticalAlignment = VerticalAlignment.Bottom, Height = 160, Background = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1), GradientStops = { new GradientStop(Color.FromArgb(0, 0, 0, 0), 0), new GradientStop(Color.FromArgb(240, 16, 19, 28), 1) } } };
+        imageHost.Children.Add(grad);
+        var closeBtn = new Border { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 14, 14, 0), Background = new SolidColorBrush(Color.FromArgb(160, 24, 28, 38)), CornerRadius = new CornerRadius(16), Width = 32, Height = 32, Cursor = System.Windows.Input.Cursors.Hand };
+        closeBtn.Child = new TextBlock { Text = "✕", FontSize = 14, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        closeBtn.MouseLeftButtonDown += (_, _) => HideNewsDetail();
+        imageHost.Children.Add(closeBtn);
+        try { if (DateTime.TryParse(n.Date, out var nd) && (DateTime.Now - nd).TotalDays < 7) { var nt = new Border { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(14, 14, 0, 0), Background = new SolidColorBrush(Color.FromRgb(94, 156, 200)), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 4, 10, 4) }; nt.Child = new TextBlock { Text = "NEW", FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(10, 20, 32)) }; imageHost.Children.Add(nt); } } catch { }
+        imageWrapper.Child = imageHost;
+        var titlePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(24, 0, 24, 20) };
+        var titleText = string.IsNullOrWhiteSpace(n.Title) ? n.Text.Split('\n').FirstOrDefault()?.Trim() ?? "Update" : n.Title!;
+        var t1 = new TextBlock { Text = titleText.ToUpper(), FontSize = 38, FontWeight = FontWeights.ExtraBold, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap };
+        try { if (!string.IsNullOrWhiteSpace(n.FontFamily)) t1.FontFamily = new FontFamily(n.FontFamily); } catch { }
+        titlePanel.Children.Add(t1);
+        var subtitle = string.IsNullOrWhiteSpace(n.Subtitle) ? "GAME UPDATE" : n.Subtitle!;
+        titlePanel.Children.Add(new TextBlock { Text = $"{subtitle}  •  Posted { (DateTime.TryParse(n.Date, out var d) ? d.ToString("MMMM d'th' yyyy", System.Globalization.CultureInfo.GetCultureInfo("en-US")) : n.Date ?? "") }  •  {n.Author}", FontSize = 11, Foreground = new SolidColorBrush(Color.FromRgb(170, 175, 185)), Margin = new Thickness(0, 6, 0, 0), FontWeight = FontWeights.SemiBold });
+        imageHost.Children.Add(titlePanel);
+        Grid.SetRow(imageWrapper, 0); grid.Children.Add(imageWrapper);
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(24, 18, 24, 18) };
+        var bodyText = n.Text;
+        if (!string.IsNullOrWhiteSpace(n.Title) && bodyText.StartsWith(n.Title!)) bodyText = bodyText.Substring(n.Title!.Length).TrimStart('\n','\r',' ');
+        var tb = new TextBlock { Text = bodyText, FontSize = 14, Foreground = new SolidColorBrush(Color.FromRgb(220, 222, 228)), TextWrapping = TextWrapping.Wrap, LineHeight = 22, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+        if (!string.IsNullOrWhiteSpace(n.FontFamily)) { try { tb.FontFamily = new FontFamily(n.FontFamily); } catch { } }
+        scroll.Content = tb;
+        Grid.SetRow(scroll, 1); grid.Children.Add(scroll);
+        outer.Child = grid;
+        _newsDetailOverlay.Child = outer;
+        _newsDetailOverlay.Visibility = Visibility.Visible;
+        _newsDetailOverlay.Opacity = 0;
+        _newsDetailOverlay.CacheMode = new BitmapCache { EnableClearType = false, SnapsToDevicePixels = true };
+        var tt = new TranslateTransform(0, 32); _newsDetailOverlay.RenderTransform = tt;
+        RenderOptions.SetBitmapScalingMode(_newsDetailOverlay, BitmapScalingMode.LowQuality);
+        _newsDetailOverlay.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(420)) { EasingFunction = new CircleEase { EasingMode = EasingMode.EaseOut } });
+        tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(32, 0, TimeSpan.FromMilliseconds(520)) { EasingFunction = new CircleEase { EasingMode = EasingMode.EaseOut } });
+    }
+
+    private void HideNewsDetail()
+    {
+        if (_newsDetailOverlay == null || _newsDetailOverlay.Visibility != Visibility.Visible) return;
+        var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
+        fade.Completed += (_, _) => { _newsDetailOverlay.Visibility = Visibility.Collapsed; _newsDetailOverlay.CacheMode = null; };
+        _newsDetailOverlay.BeginAnimation(UIElement.OpacityProperty, fade);
+        if (_newsDetailOverlay.RenderTransform is TranslateTransform tt)
+            tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, 16, TimeSpan.FromMilliseconds(220)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } });
+    }
+
+    private async Task LoadNewsImage(Image img, string url)
+    {
+        try
+        {
+            var bytes = await Http.GetByteArrayAsync(url);
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.StreamSource = new MemoryStream(bytes);
+            bmp.EndInit();
+            bmp.Freeze();
+            img.Source = bmp;
+        } catch { }
     }
 
     private Grid BuildLegal()
@@ -1995,7 +3525,7 @@ public partial class MainWindow : Window
     }
 
     private TextBlock SectionLabel(string text)
-        => new() { Text = text, FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 4) };
+        => new() { Text = Localization.T(text), FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 4) };
 
     private Grid ToggleRow(string title, string desc, bool value, Action<bool> onChange)
     {
@@ -2014,10 +3544,10 @@ public partial class MainWindow : Window
     }
 
     private TextBlock T(string text, double size, Brush color, bool bold, double top = 0)
-        => new() { Text = text, FontSize = size, Foreground = color, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, Margin = new Thickness(0, top, 0, 0), TextWrapping = TextWrapping.Wrap };
+        => new() { Text = Localization.T(text), FontSize = size, Foreground = color, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, Margin = new Thickness(0, top, 0, 0), TextWrapping = TextWrapping.Wrap };
 
     private Button Btn(string text, bool accent, int width)
-        => new() { Content = text, Style = (Style)FindResource(accent ? "AccentPillButton" : "PillButton"), Width = width, Height = 46, VerticalAlignment = VerticalAlignment.Top };
+        => new() { Content = Localization.T(text), Style = (Style)FindResource(accent ? "AccentPillButton" : "PillButton"), Width = width, Height = 46, VerticalAlignment = VerticalAlignment.Top };
 }
 
 internal static class TextBlockExtensions

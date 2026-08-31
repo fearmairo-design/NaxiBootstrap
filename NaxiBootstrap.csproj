@@ -5,24 +5,53 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <AssemblyTitle>Naxi Bootstrap</AssemblyTitle>
     <Product>Naxi Bootstrap</Product>
     <Company>Naxi Studios</Company>
     <Copyright>© 2026 Naxi Studios. All rights reserved.</Copyright>
-    <FileVersion>1.4.0</FileVersion>
-    <AssemblyVersion>1.4.0</AssemblyVersion>
-    <InformationalVersion>1.4.0</InformationalVersion>
+    <FileVersion>1.7.6</FileVersion>
+    <AssemblyVersion>1.7.6</AssemblyVersion>
+    <InformationalVersion>1.7.6</InformationalVersion>
     <DebugType Condition="'$(Configuration)'=='Release'">none</DebugType>
     <DebugSymbols Condition="'$(Configuration)'=='Release'">false</DebugSymbols>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <EventSourceSupport>false</EventSourceSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <StackTraceSupport>false</StackTraceSupport>
   </PropertyGroup>
   <ItemGroup>
     <None Update="updatelog.json" CopyToOutputDirectory="PreserveNewest"/>
+    <None Update="news.json" CopyToOutputDirectory="PreserveNewest"/>
     <Resource Include="icon.ico"/>
+    <EmbeddedResource Include="icon.ico"/>
     <EmbeddedResource Include="license\LICENSE.md"/>
     <EmbeddedResource Include="license\PRIVACY_POLICY.md"/>
+    <EmbeddedResource Include="Assets\DefaultCursors\ArrowCursor.png" />
+    <EmbeddedResource Include="Assets\DefaultCursors\ArrowFarCursor.png" />
+    <EmbeddedResource Include="Assets\DefaultCursors\MouseLockedCursor.png" />
+    <EmbeddedResource Include="Assets\DefaultCursors\IBeamCursor.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\CircleBackground.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\CircleBackground@2x.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\CircleBackground@3x.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SegmentedCircle.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SegmentedCircle@2x.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SegmentedCircle@3x.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SelectedGradient.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SelectedGradient@2x.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SelectedGradient@3x.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SelectedLine.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SelectedLine@2x.png" />
+    <EmbeddedResource Include="Assets\DefaultEmotes\SelectedLine@3x.png" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0"/>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15"/>
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0"/>
   </ItemGroup>
 </Project>
