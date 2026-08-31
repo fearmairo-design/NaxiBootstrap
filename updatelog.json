@@ -1,8 +1,16 @@
 ﻿[
   {
     "version": "v1.7.5",
-    "date": "2026-08-28",
+    "date": "2026-08-31",
     "new": true,
+    "changes": [
+      { "type": "+", "text": "Now you can change launcher language in Settings" },
+      { "type": "~", "text": "Bugs fixed" }
+    ]
+  },
+    "version": "v1.7.5",
+    "date": "2026-08-28",
+    "new": false,
     "changes": [
       { "type": "+", "text": "News tab — photo on top, text below, custom font, author chooser (Foxzy/Liniks69/mxxnbyal), NEW tag" },
       { "type": "+", "text": "News detail — click any post to open full view with smooth fade/slide" },
