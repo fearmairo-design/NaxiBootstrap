@@ -8,6 +8,7 @@
       { "type": "~", "text": "Bugs fixed" }
     ]
   },
+   {
     "version": "v1.7.5",
     "date": "2026-08-28",
     "new": false,
