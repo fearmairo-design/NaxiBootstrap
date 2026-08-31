@@ -540,7 +540,9 @@ internal static class AccountStore
 
 public partial class MainWindow : Window
 {
-    private const string AppVersion = "v1.7.5";
+    // Keep update checks tied to the assembly metadata so a release cannot
+    // advertise an older version when its source constant is missed.
+    private static readonly string AppVersion = $"v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"}";
 
     private static readonly string GitHubRepo = Deobfuscate("ZmVhcm1haXJvLWRlc2lnbi9OYXhpQm9vdHN0cmFw");
 
