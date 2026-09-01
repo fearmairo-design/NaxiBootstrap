@@ -1,4 +1,15 @@
 ﻿[
+     {
+    "version": "v1.7.7",
+    "date": "2026-09-01",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Added PRO" },
+      { "type": "+", "text": "You need pro to change emote wheel" },
+      { "type": "~", "text": "Buy pro in our discord" },
+      { "type": "~", "text": "Bugs fixed" }
+    ]
+  },
   {
     "version": "v1.7.6",
     "date": "2026-08-31",
