@@ -12,7 +12,7 @@
   },{
     "version": "v1.7.7",
     "date": "2026-09-01",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Added PRO" },
       { "type": "+", "text": "You need pro to change emote wheel" },
@@ -23,7 +23,7 @@
   {
     "version": "v1.7.6",
     "date": "2026-08-31",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Now you can change launcher language in Settings" },
       { "type": "~", "text": "Bugs fixed" }
