@@ -1,5 +1,15 @@
-﻿[
-  {
+[
+    {
+    "version": "v1.8.0",
+    "date": "2026-09-05",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Much stronger FPS optimization — Apply Customization now applies a full performance kit (grass off, MSAA off, low textures, lighting and telemetry optimizations)" },
+      { "type": "+", "text": "Translations improved — all 6 languages (EN/RU/RO/FR/JA/CS) now cover every button, toggle and section" },
+      { "type": "~", "text": "Fixed news photos not loading — direct image links and Discord CDN supported, broken links show a clean placeholder" },
+      { "type": "~", "text": "General stability improvements" }
+    ]
+  },{
     "version": "v1.7.7",
     "date": "2026-09-01",
     "new": true,
