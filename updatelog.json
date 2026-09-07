@@ -1,5 +1,22 @@
-[
-    {
+﻿[
+  {
+    "version": "v1.8.1",
+    "date": "2026-09-07",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "New compact navigation bar — sections are icons, the active one smoothly reveals its name" },
+      { "type": "+", "text": "Light theme + 8 accent colors — pick your look in Settings. The Light theme is now fully white (cards, inputs, navigation) with dark text" },
+      { "type": "~", "text": "Fixed app error when switching theme or accent color" },
+      { "type": "+", "text": "Apply to Roblox button now animates on press — shows Applying... then Applied so you always know it worked" },
+      { "type": "+", "text": "FPS presets — Potato / Balanced / Quality applied with one click" },
+      { "type": "+", "text": "Zapret presets now in a dropdown list instead of cycling" },
+      { "type": "~", "text": "Custom launcher background now survives updates — it is re-downloaded automatically if the cache is lost" },
+      { "type": "+", "text": "Built-in Zapret DPI bypass — one toggle in Settings, so Roblox images, the CDN and Discord keep working on ISPs that block them (RU and similar)" },
+      { "type": "+", "text": "22 DPI bypass presets (general, ALT 1–13, EXP, FAKE TLS AUTO, SIMPLE FAKE) — switch in Settings if your ISP needs another strategy" },
+      { "type": "+", "text": "The bypass runs silently after the first enable and survives launcher restarts" }
+    ]
+  },
+  {
     "version": "v1.8.0",
     "date": "2026-09-05",
     "new": true,
@@ -9,30 +26,39 @@
       { "type": "~", "text": "Fixed news photos not loading — direct image links and Discord CDN supported, broken links show a clean placeholder" },
       { "type": "~", "text": "General stability improvements" }
     ]
-  },{
+  },
+  {
     "version": "v1.7.7",
-    "date": "2026-09-01",
-    "new": false,
+    "date": "2026-08-31",
+    "new": true,
     "changes": [
-      { "type": "+", "text": "Added PRO" },
-      { "type": "+", "text": "You need pro to change emote wheel" },
-      { "type": "~", "text": "Buy pro in our discord" },
-      { "type": "~", "text": "Bugs fixed" }
+      { "type": "+", "text": "Naxi Pro — unlock with a one-time invite code, bound to your PC" },
+      { "type": "+", "text": "PC optimization scan — free FPS forecast for your hardware, Pro applies the best preset in one click" },
+      { "type": "+", "text": "Pro perks showcase with locks on the Pro tab" },
+      { "type": "+", "text": "Multi-use invite codes — one code can now have 3, 5, 50 or more activations" },
+      { "type": "+", "text": "Pro branding — gold logo, Pro icon and Naxi Bootstrap Pro title when Pro is active" },
+      { "type": "~", "text": "Emote wheel customization is now a Pro feature" },
+      { "type": "+", "text": "Per-game flag profiles — each game gets its own preset, captured automatically when you launch it (Pro)" },
+      { "type": "+", "text": "Per-game cursors — assign custom cursors to individual games (Pro)" },
+      { "type": "+", "text": "Pro codes with duration — 1/3/6 months or any number of days, time left is shown in the launcher, premium can be revoked per device" }
     ]
   },
   {
     "version": "v1.7.6",
     "date": "2026-08-31",
-    "new": false,
+    "new": true,
     "changes": [
-      { "type": "+", "text": "Now you can change launcher language in Settings" },
-      { "type": "~", "text": "Bugs fixed" }
+      { "type": "+", "text": "Custom cursors, emote textures and skybox settings now persist across Roblox updates" },
+      { "type": "+", "text": "Added Discord Rich Presence editor with custom details, images and buttons" },
+      { "type": "+", "text": "Added Roblox Studio launch from the Home page" },
+      { "type": "~", "text": "Improved launcher startup, window behavior and localization" },
+      { "type": "~", "text": "General stability and interface improvements" }
     ]
   },
-   {
+  {
     "version": "v1.7.5",
     "date": "2026-08-28",
-    "new": false,
+    "new": true,
     "changes": [
       { "type": "+", "text": "News tab — photo on top, text below, custom font, author chooser (Foxzy/Liniks69/mxxnbyal), NEW tag" },
       { "type": "+", "text": "News detail — click any post to open full view with smooth fade/slide" },
