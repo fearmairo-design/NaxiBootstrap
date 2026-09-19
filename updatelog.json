@@ -1,8 +1,18 @@
-﻿[
+[
+  {
+    "version": "v2.0.0",
+    "date": "2026-09-19",
+    "new": true,
+    "changes": [
+      { "type": "+", "text": "Major release v2.0.0 — stable milestone with all v1.9.0 features promoted to release" },
+      { "type": "+", "text": "New UI and much more!" },
+      { "type": "~", "text": "General stability and performance improvements" }
+    ]
+  },
   {
     "version": "v1.9.0",
     "date": "2026-09-07",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "New compact navigation bar — sections are icons, the active one smoothly reveals its name" },
       { "type": "+", "text": "Light theme + 8 accent colors — pick your look in Settings. The Light theme is now fully white (cards, inputs, navigation) with dark text" },
@@ -19,7 +29,7 @@
   {
     "version": "v1.8.0",
     "date": "2026-09-05",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Much stronger FPS optimization — Apply Customization now applies a full performance kit (grass off, MSAA off, low textures, lighting and telemetry optimizations)" },
       { "type": "+", "text": "Translations improved — all 6 languages (EN/RU/RO/FR/JA/CS) now cover every button, toggle and section" },
@@ -30,7 +40,7 @@
   {
     "version": "v1.7.7",
     "date": "2026-08-31",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Naxi Pro — unlock with a one-time invite code, bound to your PC" },
       { "type": "+", "text": "PC optimization scan — free FPS forecast for your hardware, Pro applies the best preset in one click" },
@@ -46,7 +56,7 @@
   {
     "version": "v1.7.6",
     "date": "2026-08-31",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "Custom cursors, emote textures and skybox settings now persist across Roblox updates" },
       { "type": "+", "text": "Added Discord Rich Presence editor with custom details, images and buttons" },
@@ -58,7 +68,7 @@
   {
     "version": "v1.7.5",
     "date": "2026-08-28",
-    "new": true,
+    "new": false,
     "changes": [
       { "type": "+", "text": "News tab — photo on top, text below, custom font, author chooser (Foxzy/Liniks69/mxxnbyal), NEW tag" },
       { "type": "+", "text": "News detail — click any post to open full view with smooth fade/slide" },
