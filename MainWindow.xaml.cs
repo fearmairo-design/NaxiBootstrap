@@ -1,9 +1,12 @@
 ﻿using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -12,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using Path = System.IO.Path;
 using Image = System.Windows.Controls.Image;
@@ -44,9 +48,13 @@ internal class AppConfig
     public bool Autostart { get; set; }
     public bool Notifications { get; set; } = true;
     public bool OpenRobloxLinks { get; set; } = true;
+    public bool Zapret { get; set; }
+    public string ZapretPreset { get; set; } = "general";
     public string RobloxVersion { get; set; } = "";
     public string FontName { get; set; } = "Segoe UI";
     public string BackgroundUrl { get; set; } = "";
+    public string Theme { get; set; } = "Dark";
+    public string Accent { get; set; } = "Blue";
     public long LastUsedAccountId { get; set; }
     public string NormalCursorPath { get; set; } = "";
     public string PointingCursorPath { get; set; } = "";
@@ -71,6 +79,41 @@ internal class AppConfig
     public string DiscordRpcButton2Url { get; set; } = "";
     public bool DiscordRpcShowElapsed { get; set; } = true;
     public string Language { get; set; } = "En";
+    public bool IsPro { get; set; }
+    public string? ProExpiresAt { get; set; }
+    public bool IsMax { get; set; }
+    public string? MaxExpiresAt { get; set; }
+    public bool AutoRejoin { get; set; }
+    public string GameHubSort { get; set; } = "players";
+    public bool QuickHotkey { get; set; } = true;
+    public bool RpcAutoGame { get; set; }
+    public Dictionary<string, long> PlaySeconds { get; set; } = new Dictionary<string, long>();
+    public List<long> RecentPlaceIds { get; set; } = new List<long>();
+    public Dictionary<string, GameProfile> GameProfiles { get; set; } = new Dictionary<string, GameProfile>();
+    public List<long> FavoritePlaceIds { get; set; } = new List<long>();
+    public List<GameFolder> GameFolders { get; set; } = new List<GameFolder>();
+}
+
+internal sealed class GameFolder
+{
+    public string Name { get; set; } = "";
+    public List<long> PlaceIds { get; set; } = new List<long>();
+}
+
+internal class GameProfile
+{
+    public string Name { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public bool FpsUnlock { get; set; } = true;
+    public int FpsLimit { get; set; } = 144;
+    public bool NoShadows { get; set; }
+    public bool PerfMode { get; set; }
+    public bool FutureLighting { get; set; }
+    public bool NoPostFx { get; set; }
+    public bool NoTelemetry { get; set; } = true;
+    public string CursorNormal { get; set; } = "";
+    public string CursorPointing { get; set; } = "";
+    public string CursorShiftLock { get; set; } = "";
 }
 
 internal static class RobloxLauncher
@@ -97,12 +140,15 @@ internal static class RobloxLauncher
         Http.DefaultRequestHeaders.Add("User-Agent", "NaxiBootstrap");
     }
 
-    public static async Task<string?> GetPlaceNameAsync(string url)
+    public static async Task<(long UniverseId, string Name)?> GetPlaceInfoAsync(string url)
     {
         try
         {
             var decoded = Uri.UnescapeDataString(url);
             var m = System.Text.RegularExpressions.Regex.Match(decoded, @"placeid=(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            // placeId= from the official roblox:// deep links matches the same
+            // regex; placi: is kept only for legacy launch URLs.
+            if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(decoded, @"placi:(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (!m.Success) return null;
             var placeId = m.Groups[1].Value;
 
@@ -113,12 +159,19 @@ internal static class RobloxLauncher
 
             var gamesJson = await Http.GetStringAsync($"https://games.roblox.com/v1/games?universeIds={universeId}", cts.Token);
             using var g = JsonDocument.Parse(gamesJson);
-            return g.RootElement.GetProperty("data")[0].GetProperty("name").GetString();
+            var name = g.RootElement.GetProperty("data")[0].GetProperty("name").GetString() ?? "";
+            return (universeId, name);
         }
         catch
         {
             return null;
         }
+    }
+
+    public static async Task<string?> GetPlaceNameAsync(string url)
+    {
+        var info = await GetPlaceInfoAsync(url);
+        return info?.Name;
     }
 
     public static AppConfig LoadConfig()
@@ -192,7 +245,25 @@ internal static class RobloxLauncher
         var flags = new Dictionary<string, string>();
         if (config.FpsUnlock) flags["DFIntTaskSchedulerTargetFps"] = config.FpsLimit.ToString();
         if (config.NoShadows) flags["FIntRenderShadowIntensity"] = "0";
-        if (config.PerfMode) flags["DFIntDebugFRMQualityLevelOverride"] = "1";
+        if (config.PerfMode)
+        {
+            // Full "potato" kit — every known real FPS flag applied together, so the
+            // optimization preset gives a much bigger frame gain (50–60+ FPS).
+            flags["DFIntDebugFRMQualityLevelOverride"] = "1";  // lowest render quality level
+            flags["DFFlagDebugPauseVoxelizer"] = "True";       // pause terrain voxelizer
+            flags["FFlagFastGPULightCulling3"] = "True";       // cheaper GPU light culling
+            flags["FIntDebugForceMSAASamples"] = "0";          // disable anti-aliasing
+            flags["DFFlagTextureQualityOverrideEnabled"] = "True";
+            flags["DFIntTextureQualityOverride"] = "0";        // lowest texture quality
+            flags["FIntTerrainArraySliceSize"] = "4";          // low-detail terrain
+            flags["FIntFRMMinGrassDistance"] = "0";            // remove grass and foliage
+            flags["FIntFRMMaxGrassDistance"] = "0";
+            flags["FIntRenderGrassDetailStrands"] = "0";
+            flags["FIntRenderGrassHeightScaler"] = "0";
+            flags["FIntRenderLocalLightUpdatesMin"] = "8";     // cheaper dynamic lights
+            flags["FIntRenderLocalLightUpdatesMax"] = "8";
+            flags["FIntRenderLocalLightFadeInMs"] = "0";
+        }
         if (config.FutureLighting) flags["FFlagDebugForceFutureIsBrightPhase3"] = "True";
         if (config.NoPostFx) flags["FFlagDisablePostFx"] = "True";
         if (config.NoTelemetry)
@@ -245,12 +316,112 @@ internal static class RobloxLauncher
         }
     }
 
-    public static void LaunchFromUrl(string url, AppConfig config)
+    public static void CaptureGameProfile(AppConfig config, long? universeId, string? gameName)
+    {
+        if (universeId == null) return;
+        if (config.GameProfiles == null) config.GameProfiles = new Dictionary<string, GameProfile>();
+        var key = universeId.Value.ToString();
+        if (config.GameProfiles.ContainsKey(key)) return;
+        config.GameProfiles[key] = new GameProfile
+        {
+            Name = string.IsNullOrWhiteSpace(gameName) ? "Game " + key : gameName!,
+            Enabled = true,
+            FpsUnlock = config.FpsUnlock,
+            FpsLimit = config.FpsLimit,
+            NoShadows = config.NoShadows,
+            PerfMode = config.PerfMode,
+            FutureLighting = config.FutureLighting,
+            NoPostFx = config.NoPostFx,
+            NoTelemetry = config.NoTelemetry
+        };
+        SaveConfig(config);
+    }
+
+    public static void ApplyFlagsForGame(AppConfig config, long? universeId)
+    {
+        GameProfile? p = null;
+        if (universeId != null && config.GameProfiles != null)
+            config.GameProfiles.TryGetValue(universeId.Value.ToString(), out p);
+
+        if (p != null && p.Enabled)
+        {
+            var flags = new Dictionary<string, string>();
+            if (p.FpsUnlock) flags["DFIntTaskSchedulerTargetFps"] = p.FpsLimit.ToString();
+            if (p.NoShadows) flags["FIntRenderShadowIntensity"] = "0";
+            if (p.PerfMode)
+            {
+                flags["DFIntDebugFRMQualityLevelOverride"] = "1";
+                // Same full "potato" kit as the global preset.
+                flags["DFFlagDebugPauseVoxelizer"] = "True";
+                flags["FFlagFastGPULightCulling3"] = "True";
+                flags["FIntDebugForceMSAASamples"] = "0";
+                flags["DFFlagTextureQualityOverrideEnabled"] = "True";
+                flags["DFIntTextureQualityOverride"] = "0";
+                flags["FIntTerrainArraySliceSize"] = "4";
+                flags["FIntFRMMinGrassDistance"] = "0";
+                flags["FIntFRMMaxGrassDistance"] = "0";
+                flags["FIntRenderGrassDetailStrands"] = "0";
+                flags["FIntRenderGrassHeightScaler"] = "0";
+                flags["FIntRenderLocalLightUpdatesMin"] = "8";
+                flags["FIntRenderLocalLightUpdatesMax"] = "8";
+                flags["FIntRenderLocalLightFadeInMs"] = "0";
+            }
+            if (p.FutureLighting) flags["FFlagDebugForceFutureIsBrightPhase3"] = "True";
+            if (p.NoPostFx) flags["FFlagDisablePostFx"] = "True";
+            if (p.NoTelemetry)
+                foreach (var f in TelemetryFlags)
+                    flags[f] = "False";
+            WriteFlagsToVersions(flags);
+        }
+        else
+        {
+            ApplyFlags(config);
+        }
+
+        string? cn = p != null && p.Enabled && !string.IsNullOrWhiteSpace(p.CursorNormal) ? p.CursorNormal : NullIfEmpty(config.NormalCursorPath);
+        string? cp = p != null && p.Enabled && !string.IsNullOrWhiteSpace(p.CursorPointing) ? p.CursorPointing : NullIfEmpty(config.PointingCursorPath);
+        string? cs = p != null && p.Enabled && !string.IsNullOrWhiteSpace(p.CursorShiftLock) ? p.CursorShiftLock : NullIfEmpty(config.ShiftCursorPath);
+        MainWindow.ApplyCursorSetForLaunch(config, cn, cp, cs);
+    }
+
+    static string? NullIfEmpty(string s)
+    {
+        return string.IsNullOrWhiteSpace(s) ? null : s;
+    }
+
+    static void WriteFlagsToVersions(Dictionary<string, string> flags)
+    {
+        var folders = FindPlayerFolders();
+        if (folders.Count == 0) return;
+        try
+        {
+            foreach (var folder in folders)
+            {
+                var dir = Path.Combine(folder, "ClientSettings");
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "ClientAppSettings.json"), JsonSerializer.Serialize(flags, new JsonSerializerOptions { WriteIndented = true }));
+            }
+        }
+        catch { }
+    }
+
+    public static async Task LaunchFromUrlAsync(string url, AppConfig config)
     {
         try
         {
             if (config.OpenRobloxLinks) RegisterProtocol(true);
-            ApplyFlags(config);
+
+            long? universeId = null;
+            string? gameName = null;
+            try
+            {
+                var info = await GetPlaceInfoAsync(url);
+                if (info.HasValue) { universeId = info.Value.UniverseId; gameName = info.Value.Name; }
+            }
+            catch { }
+
+            CaptureGameProfile(config, universeId, gameName);
+            ApplyFlagsForGame(config, universeId);
 
             var player = FindPlayerFolders().FirstOrDefault();
             if (player == null) return;
@@ -587,6 +758,7 @@ public partial class MainWindow : Window
     private Grid _cursors;
     private Grid _maintenance;
     private Grid _settings;
+    private Grid _pro;
     private Grid _about;
     private Grid _legal;
     private StackPanel _updateList = new();
@@ -608,6 +780,7 @@ public partial class MainWindow : Window
     private TextBlock _percent = new();
     private ProgressBar _progress = new();
     private Button _updateBtn = new();
+    private Button? _applyBtn;
 
     private TextBox _fpsBox = new();
     private TextBlock _flagsStatus = new();
@@ -617,6 +790,11 @@ public partial class MainWindow : Window
     private TextBox _bgUrlBox = new();
     private TextBlock _bgStatus = new();
     private TextBlock _skyStatus = new();
+    private TextBlock? _zapretStatus;
+    private Button? _zapretPresetBtn;
+    private System.Windows.Controls.Primitives.Popup? _presetPopup;
+    private static readonly FontFamily NavIconFont = new("Segoe MDL2 Assets");
+    private readonly Dictionary<Button, (Border Host, TextBlock Label, string Title)> _navLabels = new();
     private TextBlock _rbxFontStatus = new();
 
     private TextBox _accountTokenBox = new();
@@ -647,6 +825,42 @@ public partial class MainWindow : Window
     private string? _emoteGradientFile;
     private string? _emoteSelectedLineFile;
     private Grid _emotes;
+    private Grid _games;
+    private StackPanel _gamesList = new StackPanel();
+    private Ellipse? _ghStatusDot;
+    private TextBlock? _ghStatusText;
+    private TextBlock? _ghPingValue;
+    private TextBlock? _ghPingSub;
+    private TextBox? _ghSearch;
+    private TextBlock? _ghSearchHint;
+    private DateTime _ghLastRefresh = DateTime.MinValue;
+    private int _ghLoadSeq;
+    private List<HubGame> _ghCurrentGames = new List<HubGame>();    // full curated list currently loaded
+    private List<HubGame> _ghDisplayGames = new List<HubGame>();  // what the grid is currently showing
+    private StackPanel _ghFolderBar = new StackPanel();
+    private List<HubGame>? _ghAllGames;
+    private string? _ghFolderFilter; // null = All games, "__fav__" = favorites, otherwise folder name
+    private string? _ghGenreFilter;  // session-only genre filter
+    private long _ghLucky;           // random-game pick shown first on next render
+    private System.Windows.Threading.DispatcherTimer? _ghLiveTimer;
+    private bool _ghDragMoved;
+    private Point _ghDragStart;
+    private Button? _ghSortBtn;
+    private Button? _ghGenreBtn;
+
+    // auto-rejoin state
+    private System.Windows.Threading.DispatcherTimer? _rejoinTimer;
+    private Window? _rejoinWindow;
+    private long _lastJoinPlaceId;
+    private string _lastJoinName = "";
+    private DateTime _joinStartedUtc = DateTime.MinValue;
+    private bool _robloxWasRunning;
+    private DateTime _robloxLastSeen = DateTime.MinValue;
+    private int _rejoinTries;
+    private int _playSaveCounter;
+
+    // entitlement helpers — Naxi MAX includes everything Pro offers
+    private bool HasPro => _config.IsPro || _config.IsMax;
 
     private TextBlock _logsSizeText = new();
     private TextBlock _storageSizeText = new();
@@ -687,28 +901,21 @@ public partial class MainWindow : Window
 
         _config = RobloxLauncher.LoadConfig();
         if (Enum.TryParse<Lang>(_config.Language, true, out var _lang)) Localization.Current = _lang;
+        ThemeService.Apply(_config.Theme, _config.Accent);
         Localization.Changed += () =>
         {
             _updateList = new StackPanel();
             _newsList = new StackPanel();
             _legalContent = new StackPanel();
             _accountsList = new StackPanel();
+            _gamesList = new StackPanel();
             _homeLeft = new StackPanel();
             _logCard = new Border();
             _licenseTab = new Button();
             _privacyTab = new Button();
-            _home = BuildHome(); _news = BuildNews(); _accounts = BuildAccounts(); _fastFlags = BuildFastFlags(); _cursors = BuildCursors(); _emotes = BuildEmotes(); _maintenance = BuildMaintenance(); _settings = BuildSettings(); _about = BuildAbout(); _legal = BuildLegal();
+            _home = BuildHome(); _games = BuildGameHub(); _news = BuildNews(); _accounts = BuildAccounts(); _fastFlags = BuildFastFlags(); _cursors = BuildCursors(); _emotes = BuildEmotes(); _maintenance = BuildMaintenance(); _settings = BuildSettings(); _pro = BuildPro(); _about = BuildAbout(); _legal = BuildLegal();
             RenderLog(_log); _logCard.Visibility = _config.HideUpdateLog ? Visibility.Collapsed : Visibility.Visible;
-            HomeNav.Content = Localization.T("Home");
-            NewsNav.Content = Localization.T("News");
-            AccountsNav.Content = Localization.T("Accounts");
-            FlagsNav.Content = Localization.T("FastFlags");
-            CursorsNav.Content = Localization.T("Cursors");
-            EmotesNav.Content = Localization.T("Emotes");
-            MaintenanceNav.Content = Localization.T("Maintenance");
-            SettingsNav.Content = Localization.T("Settings");
-            AboutNav.Content = Localization.T("About us");
-            LegalNav.Content = Localization.T("Legal");
+            foreach (var kv in _navLabels) kv.Value.Label.Text = Localization.T(kv.Value.Title);
             PageHost.Content = _home; SetActive(HomeNav);
             _ = CheckForUpdatesAsync();
             _ = LoadNewsAsync();
@@ -718,6 +925,7 @@ public partial class MainWindow : Window
 
         _log = LoadLog();
         _home = BuildHome();
+        _games = BuildGameHub();
         _news = BuildNews();
         _accounts = BuildAccounts();
         _fastFlags = BuildFastFlags();
@@ -725,6 +933,7 @@ public partial class MainWindow : Window
         _emotes = BuildEmotes();
         _maintenance = BuildMaintenance();
         _settings = BuildSettings();
+        _pro = BuildPro();
         _about = BuildAbout();
         _legal = BuildLegal();
 
@@ -737,8 +946,13 @@ public partial class MainWindow : Window
         ApplySavedEmotes();
         RobloxLauncher.RefreshTokensFromDat();
         try { foreach (var f in Directory.GetFiles(AppContext.BaseDirectory, "*.old")) File.Delete(f); } catch { }
-        _ = CheckForUpdatesAsync();
         if (_config.DiscordRpcEnabled) DiscordRpcService.Start(_config);
+        if (_config.Zapret && !ZapretService.IsRunning())
+            Task.Run(() => { try { ZapretService.Start(_config.ZapretPreset); } catch { } });
+        InitNavButtons();
+        ApplyProBranding();
+        _ = CheckForUpdatesAsync();
+        _ = SyncProStatusAsync();
 
         Loaded += (_, _) =>
         {
@@ -772,6 +986,7 @@ public partial class MainWindow : Window
                     var exitItem = menu.Items.Add("Exit");
                     exitItem.Click += (_, _) => { try { _trayIcon!.Visible = false; _trayIcon.Dispose(); } catch { } Environment.Exit(0); };
                     _trayIcon.ContextMenuStrip = menu;
+                    ApplyProBranding();
                     _trayIcon.DoubleClick += (_, _) => { Show(); WindowState = WindowState.Normal; Activate(); _trayIcon!.Visible = false; _minimizedToTray = false; };
                     // hook for second instance to restore
                     var helper = new System.Windows.Interop.WindowInteropHelper(this);
@@ -779,9 +994,11 @@ public partial class MainWindow : Window
                     source?.AddHook((IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
                     {
                         if (msg == 0x0401) { Show(); WindowState = WindowState.Normal; Activate(); if (_trayIcon != null) _trayIcon.Visible = false; _minimizedToTray = false; }
+                        if (msg == 0x0312 && wParam.ToInt32() == HotkeyId) { ShowQuickLaunch(); handled = true; }
                         return IntPtr.Zero;
                     });
                 } catch { }
+                ApplyQuickHotkey();
         };
         Closing += MainWindow_Closing;
     }
@@ -816,6 +1033,103 @@ public partial class MainWindow : Window
     }
 
     private static CubicEase EaseOut() => new() { EasingMode = EasingMode.EaseOut };
+
+    // Universal hover/press scale animation: works with ScaleTransform,
+    // TransformGroup (game cards) or no transform at all.
+    private static void AnimScale(FrameworkElement el, double scale, int ms)
+    {
+        var d = new DoubleAnimation(scale, TimeSpan.FromMilliseconds(ms)) { EasingFunction = EaseOut() };
+        switch (el.RenderTransform)
+        {
+            case ScaleTransform st:
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, d);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, d);
+                break;
+            case TransformGroup tg:
+                foreach (var t in tg.Children.OfType<ScaleTransform>())
+                {
+                    t.BeginAnimation(ScaleTransform.ScaleXProperty, d);
+                    t.BeginAnimation(ScaleTransform.ScaleYProperty, d);
+                }
+                break;
+            default:
+                el.RenderTransformOrigin = new Point(0.5, 0.5);
+                el.RenderTransform = new ScaleTransform(scale, scale);
+                break;
+        }
+    }
+    private static BackEase BackOut(double amplitude = 0.35) => new() { EasingMode = EasingMode.EaseOut, Amplitude = amplitude };
+
+    // Springy (overshoot) scale for small elements: stars, chips, floating buttons.
+    private static void AnimScaleSpring(FrameworkElement el, double scale, int ms)
+    {
+        var d = new DoubleAnimation(scale, TimeSpan.FromMilliseconds(ms)) { EasingFunction = BackOut() };
+        switch (el.RenderTransform)
+        {
+            case ScaleTransform st:
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, d);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, d);
+                break;
+            case TransformGroup tg:
+                foreach (var t in tg.Children.OfType<ScaleTransform>())
+                {
+                    t.BeginAnimation(ScaleTransform.ScaleXProperty, d);
+                    t.BeginAnimation(ScaleTransform.ScaleYProperty, d);
+                }
+                break;
+            default:
+                el.RenderTransformOrigin = new Point(0.5, 0.5);
+                el.RenderTransform = new ScaleTransform(scale, scale);
+                break;
+        }
+    }
+
+    private static Color SolidColor(Brush b, Color fallback)
+        => b is SolidColorBrush sc ? sc.Color : fallback;
+
+    private static Color LerpColor(Color a, Color b, double t)
+    {
+        t = Math.Max(0, Math.Min(1, t));
+        return Color.FromRgb(
+            (byte)Math.Round(a.R + (b.R - a.R) * t),
+            (byte)Math.Round(a.G + (b.G - a.G) * t),
+            (byte)Math.Round(a.B + (b.B - a.B) * t));
+    }
+
+    // Animate a persistent glow effect (no effect swapping → no flicker).
+    private static void GlowTo(System.Windows.Media.Effects.DropShadowEffect glow, double opacity, double blur, int ms)
+    {
+        glow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.OpacityProperty,
+            new DoubleAnimation(opacity, TimeSpan.FromMilliseconds(ms)) { EasingFunction = EaseOut() });
+        glow.BeginAnimation(System.Windows.Media.Effects.DropShadowEffect.BlurRadiusProperty,
+            new DoubleAnimation(blur, TimeSpan.FromMilliseconds(ms)) { EasingFunction = EaseOut() });
+    }
+
+    // Expanding fading ring (used when a game is favorited).
+    private void PlayBurst(System.Windows.Controls.Grid host, Color color)
+    {
+        var ring = new System.Windows.Shapes.Ellipse
+        {
+            Width = 30,
+            Height = 30,
+            Stroke = new SolidColorBrush(color),
+            StrokeThickness = 2,
+            Opacity = 0.85,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(0.6, 0.6)
+        };
+        host.Children.Add(ring);
+        var sc = (ScaleTransform)ring.RenderTransform;
+        var spread = new DoubleAnimation(0.6, 1.9, TimeSpan.FromMilliseconds(420)) { EasingFunction = EaseOut() };
+        var fade = new DoubleAnimation(0.85, 0, TimeSpan.FromMilliseconds(420)) { EasingFunction = EaseOut() };
+        fade.Completed += (_, _) => host.Children.Remove(ring);
+        sc.BeginAnimation(ScaleTransform.ScaleXProperty, spread);
+        sc.BeginAnimation(ScaleTransform.ScaleYProperty, spread);
+        ring.BeginAnimation(UIElement.OpacityProperty, fade);
+    }
 
     private static void AnimateFadeSlide(UIElement el, TranslateTransform tt, double fromY, double toY, int delayMs)
     {
@@ -867,11 +1181,73 @@ public partial class MainWindow : Window
 
     private void SetActive(Button active)
     {
-        foreach (var b in new[] { HomeNav, NewsNav, AccountsNav, FlagsNav, CursorsNav, EmotesNav, MaintenanceNav, SettingsNav, AboutNav, LegalNav })
-            b.Style = (Style)FindResource(b == active ? "NavButtonActive" : "NavButton");
+        foreach (var b in new[] { HomeNav, GamesNav, NewsNav, AccountsNav, FlagsNav, CursorsNav, EmotesNav, MaintenanceNav, SettingsNav, ProNav, AboutNav, LegalNav })
+        {
+            bool isActive = b == active;
+            b.Style = (Style)FindResource(isActive ? "NavButtonActive" : "NavButton");
+            try { AnimateNavLabel(b, isActive); } catch { }
+        }
+    }
+
+    // Compact icon navigation: every section shows only its glyph; the active one
+    // smoothly expands to reveal its name (label width + fade), like modern launchers.
+    private void InitNavButtons()
+    {
+        try
+        {
+            InitNavButton(HomeNav, "\uE80F", "Home");
+            InitNavButton(GamesNav, "\uE7FC", "Games");
+            InitNavButton(NewsNav, "\uE8A5", "News");
+            InitNavButton(AccountsNav, "\uE77B", "Accounts");
+            InitNavButton(FlagsNav, "\uE7C1", "FastFlags");
+            InitNavButton(CursorsNav, "\uE7C9", "Cursors");
+            InitNavButton(EmotesNav, "\uE76E", "Emotes");
+            InitNavButton(MaintenanceNav, "\uE90F", "Maintenance");
+            InitNavButton(SettingsNav, "\uE713", "Settings");
+            InitNavButton(ProNav, "\uE735", "Pro");
+            InitNavButton(AboutNav, "\uE716", "About us");
+            InitNavButton(LegalNav, "\uE72E", "Legal");
+            foreach (var b in _navLabels.Keys) AnimateNavLabel(b, b == HomeNav);
+        }
+        catch { }
+    }
+
+    private void InitNavButton(Button b, string glyph, string title)
+    {
+        var icon = new TextBlock { Text = glyph, FontFamily = NavIconFont, FontSize = 15, VerticalAlignment = VerticalAlignment.Center };
+        var label = new TextBlock { Text = Localization.T(title), FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(7, 0, 1, 0) };
+        var host = new Border { MaxWidth = 0, Opacity = 0, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Center, Child = label };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        panel.Children.Add(icon);
+        panel.Children.Add(host);
+        b.Content = panel;
+        b.Padding = new Thickness(11, 7, 11, 7);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(b, title);
+        _navLabels[b] = (host, label, title);
+    }
+
+    private void AnimateNavLabel(Button b, bool active, bool animate = true)
+    {
+        if (!_navLabels.TryGetValue(b, out var info)) return;
+        var (host, label, title) = info;
+        label.Text = Localization.T(title);
+        // Expand by animating MaxWidth: the border grows to fit the text and stops
+        // exactly at its width — no text measuring needed, robust for any language.
+        if (!animate)
+        {
+            host.BeginAnimation(Border.MaxWidthProperty, null);
+            host.BeginAnimation(UIElement.OpacityProperty, null);
+            host.MaxWidth = active ? 200 : 0;
+            host.Opacity = active ? 1 : 0;
+            return;
+        }
+        double from = host.ActualWidth > 0 ? host.ActualWidth : Math.Max(0, host.MaxWidth);
+        host.BeginAnimation(Border.MaxWidthProperty, new DoubleAnimation(from, active ? 200 : 0, TimeSpan.FromMilliseconds(480)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+        host.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(active ? 0 : 1, active ? 1 : 0, TimeSpan.FromMilliseconds(360)));
     }
 
     private void Home_Click(object sender, RoutedEventArgs e) => SwitchPage(_home, HomeNav);
+    private void Games_Click(object sender, RoutedEventArgs e) { RefreshGameHubLive(); SwitchPage(_games, GamesNav); }
     private void News_Click(object sender, RoutedEventArgs e) { _ = LoadNewsAsync(); SwitchPage(_news, NewsNav); }
     private void Accounts_Click(object sender, RoutedEventArgs e) { RenderAccounts(); SwitchPage(_accounts, AccountsNav); }
     private void Flags_Click(object sender, RoutedEventArgs e) { CheckRobloxVersion(); SwitchPage(_fastFlags, FlagsNav); }
@@ -879,6 +1255,7 @@ public partial class MainWindow : Window
     private void Emotes_Click(object sender, RoutedEventArgs e) { SwitchPage(_emotes, EmotesNav); }
     private void Maintenance_Click(object sender, RoutedEventArgs e) { RefreshSizes(); RefreshInstallInfo(); SwitchPage(_maintenance, MaintenanceNav); }
     private void Settings_Click(object sender, RoutedEventArgs e) => SwitchPage(_settings, SettingsNav);
+    private void Pro_Click(object sender, RoutedEventArgs e) => SwitchPage(_pro, ProNav);
     private void About_Click(object sender, RoutedEventArgs e) => SwitchPage(_about, AboutNav);
     private void Legal_Click(object sender, RoutedEventArgs e) => SwitchPage(_legal, LegalNav);
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
@@ -918,7 +1295,7 @@ public partial class MainWindow : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 28, 0, 0) };
         _updateBtn = Btn("Update", false, 130); _updateBtn.IsEnabled = false; _updateBtn.Click += Update_Click;
         var launch = Btn("Launch", true, 130); launch.Margin = new Thickness(10, 0, 0, 0); launch.Click += Launch_Click;
-        var studio = Btn("Studio", true, 110); studio.Margin = new Thickness(10, 0, 0, 0); studio.Click += Studio_Click;
+        var studio = Btn("Studio", false, 110); studio.Margin = new Thickness(10, 0, 0, 0); studio.Click += Studio_Click;
         var discord = Btn("Discord", false, 110); discord.Margin = new Thickness(10, 0, 0, 0); discord.Click += (_, _) => OpenLink(DiscordUrl);
         buttons.Children.Add(_updateBtn); buttons.Children.Add(launch); buttons.Children.Add(studio); buttons.Children.Add(discord);
         left.Children.Add(buttons);
@@ -930,7 +1307,13 @@ public partial class MainWindow : Window
         var logGrid = new Grid();
         logGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         logGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        logGrid.Children.Add(T("UPDATE LOG", 11.5, (Brush)FindResource("Muted"), true));
+        var logHead = new StackPanel { Orientation = Orientation.Horizontal };
+        logHead.Children.Add(T("UPDATE LOG", 11.5, (Brush)FindResource("LogHeader"), true));
+        var logHint = T("Click a version to see the full log", 11, (Brush)FindResource("Muted"), false);
+        logHint.VerticalAlignment = VerticalAlignment.Center;
+        logHint.Margin = new Thickness(10, 0, 0, 0);
+        logHead.Children.Add(logHint);
+        logGrid.Children.Add(logHead);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 14, 0, 0) };
         scroll.Content = _updateList;
         Grid.SetRow(scroll, 1); logGrid.Children.Add(scroll);
@@ -942,9 +1325,14 @@ public partial class MainWindow : Window
 
     private async Task CheckForUpdatesAsync()
     {
+        // Fetch the remote log and release info in parallel so a slow endpoint
+        // can never block the other one (worst case = one 8s timeout, not two).
+        var logTask = FetchRemoteLogAsync();
+        var releaseTask = GetLatestReleaseAsync();
+
         try
         {
-            var remote = await FetchRemoteLogAsync();
+            var remote = await logTask;
             if (remote is { Count: > 0 })
             {
                 _log = remote;
@@ -956,7 +1344,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var (tag, asset) = await GetLatestReleaseAsync();
+            var (tag, asset) = await releaseTask;
             if (IsNewer(tag))
             {
                 _updateText.Text = $"Update available: {tag}";
@@ -981,7 +1369,7 @@ public partial class MainWindow : Window
             }
         }
 
-        CheckRobloxVersion();
+        try { CheckRobloxVersion(); } catch { }
     }
 
     private void CheckRobloxVersion()
@@ -1294,7 +1682,8 @@ public partial class MainWindow : Window
         for (var i = 0; i < ordered.Count; i++)
         {
             var entry = ordered[i];
-            var card = new Border { Style = (Style)FindResource("UpdateCard"), Padding = new Thickness(18), Margin = new Thickness(0, 0, 0, 10) };
+            var card = new Border { Style = (Style)FindResource("UpdateCard"), Padding = new Thickness(18), Margin = new Thickness(0, 0, 0, 10), Cursor = System.Windows.Input.Cursors.Hand };
+            card.MouseLeftButtonUp += (_, _) => ShowUpdateCardWindow(entry);
             var s = new StackPanel();
 
             var head = new Grid { Margin = new Thickness(0, 0, 0, 8) };
@@ -1329,6 +1718,101 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ShowUpdateCardWindow(LogEntry entry)
+    {
+        var dialog = new Window
+        {
+            Title = "Update log",
+            Owner = this,
+            Width = 560,
+            SizeToContent = SizeToContent.Height,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var shell = new Border
+        {
+            CornerRadius = new CornerRadius(22),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(50, 66, 84)),
+            BorderThickness = new Thickness(1),
+            ClipToBounds = true,
+            Opacity = 0,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(0.85, 0.85),
+            Background = new LinearGradientBrush(Color.FromRgb(10, 18, 31), Color.FromRgb(13, 25, 42), new Point(0, 0), new Point(1, 1))
+        };
+        var root = new Grid { Margin = new Thickness(24) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var closeRow = new Grid();
+        var close = new Button { Content = "✕", HorizontalAlignment = HorizontalAlignment.Right };
+        close.Style = (Style)FindResource("CloseCrossButton");
+        closeRow.Children.Add(close);
+        Grid.SetRow(closeRow, 0); root.Children.Add(closeRow);
+
+        var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(20), Margin = new Thickness(0, 10, 0, 0) };
+        var s = new StackPanel();
+        var head = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+        head.ColumnDefinitions.Add(new ColumnDefinition());
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var ver = T(entry.Version, 18, (Brush)FindResource("Text"), true);
+        Grid.SetColumn(ver, 0); head.Children.Add(ver);
+        if (entry.New)
+        {
+            var badge = new Border { Background = (Brush)FindResource("Accent"), CornerRadius = new CornerRadius(5), Padding = new Thickness(9, 3, 9, 3), VerticalAlignment = VerticalAlignment.Center, Child = T("NEW", 10.5, (Brush)FindResource("AccentText"), true) };
+            Grid.SetColumn(badge, 1); head.Children.Add(badge);
+        }
+        else if (entry.Date != null)
+        {
+            var d = T(entry.Date, 12.5, (Brush)FindResource("Muted"), false);
+            d.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(d, 1); head.Children.Add(d);
+        }
+        s.Children.Add(head);
+        foreach (var c in entry.Changes)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 0) };
+            row.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = (Brush)FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 9, 0) });
+            row.Children.Add(T($"[{c.Type}] {Localization.T(c.Text)}", 13.5, (Brush)FindResource("Muted"), false));
+            s.Children.Add(row);
+        }
+        card.Child = s;
+        Grid.SetRow(card, 1); root.Children.Add(card);
+
+        shell.Child = root;
+        dialog.Content = shell;
+
+        var closing = false;
+        void CloseAnimated()
+        {
+            if (closing) return;
+            closing = true;
+            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(170)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+            var scale = new DoubleAnimation(1, 0.9, TimeSpan.FromMilliseconds(170)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+            fade.Completed += (_, _) => dialog.Close();
+            shell.BeginAnimation(UIElement.OpacityProperty, fade);
+            var st = (ScaleTransform)shell.RenderTransform;
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, scale);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, scale);
+        }
+
+        close.Click += (_, _) => CloseAnimated();
+        dialog.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) CloseAnimated(); };
+        dialog.Loaded += (_, _) =>
+        {
+            var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(230)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            var scale = new DoubleAnimation(0.85, 1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            shell.BeginAnimation(UIElement.OpacityProperty, fade);
+            var st = (ScaleTransform)shell.RenderTransform;
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, scale);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, scale);
+        };
+        dialog.ShowDialog();
+    }
+
     private Grid BuildFastFlags()
     {
         var g = new Grid();
@@ -1346,6 +1830,14 @@ public partial class MainWindow : Window
         var perf = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24) };
         var ps = new StackPanel();
         ps.Children.Add(SectionLabel("PERFORMANCE"));
+        ps.Children.Add(T("FPS Presets", 15.5, (Brush)FindResource("Text"), true));
+        ps.Children.Add(T("One click — tested flag combos. Potato = maximum FPS, Quality = best graphics.", 12.5, (Brush)FindResource("Muted"), false, 3));
+        var ffRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 6) };
+        var ff1 = Btn("Potato", false, 130); ff1.Height = 40; ff1.Click += (_, _) => ApplyFfPreset("potato");
+        var ff2 = Btn("Balanced", false, 130); ff2.Height = 40; ff2.Margin = new Thickness(8, 0, 0, 0); ff2.Click += (_, _) => ApplyFfPreset("balanced");
+        var ff3 = Btn("Quality", false, 130); ff3.Height = 40; ff3.Margin = new Thickness(8, 0, 0, 0); ff3.Click += (_, _) => ApplyFfPreset("quality");
+        ffRow.Children.Add(ff1); ffRow.Children.Add(ff2); ffRow.Children.Add(ff3);
+        ps.Children.Add(ffRow);
         ps.Children.Add(ToggleRow("FPS Unlocker", "Remove the default FPS cap in Roblox.", _config.FpsUnlock, v => { _config.FpsUnlock = v; _fpsBox.IsEnabled = v; SaveAndApply(); }));
 
         var fpsRow = new Grid { Margin = new Thickness(0, 18, 0, 0) };
@@ -1361,7 +1853,7 @@ public partial class MainWindow : Window
         ps.Children.Add(fpsRow);
 
         ps.Children.Add(ToggleRow("Disable Shadows", "Turn off dynamic shadows for extra FPS.", _config.NoShadows, v => { _config.NoShadows = v; SaveAndApply(); }));
-        ps.Children.Add(ToggleRow("Performance Mode", "Force the lowest render quality level.", _config.PerfMode, v => { _config.PerfMode = v; SaveAndApply(); }));
+        ps.Children.Add(ToggleRow("Performance Mode", "Lowest quality, no grass and no anti-aliasing for maximum FPS.", _config.PerfMode, v => { _config.PerfMode = v; SaveAndApply(); }));
         perf.Child = ps;
         host.Children.Add(perf);
 
@@ -1379,6 +1871,24 @@ public partial class MainWindow : Window
         vs.Children.Add(ToggleRow("Disable Telemetry", "Send less analytics data to Roblox servers.", _config.NoTelemetry, v => { _config.NoTelemetry = v; SaveAndApply(); }));
         priv.Child = vs;
         host.Children.Add(priv);
+
+        var gpCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
+        var gsv = new StackPanel();
+        gsv.Children.Add(SectionLabel("PER-GAME PROFILES"));
+        gsv.Children.Add(T("Each game gets its own flag preset — captured automatically when you launch it through Naxi and applied on every launch.", 12.5, (Brush)FindResource("Muted"), false, 2));
+        if (!HasPro) gsv.Children.Add(T("Editing game profiles requires Pro.", 12, (Brush)FindResource("Accent"), false, 4));
+
+        if (_config.GameProfiles == null || _config.GameProfiles.Count == 0)
+        {
+            gsv.Children.Add(T("No game profiles yet — launch a game through Naxi and it will appear here.", 12, (Brush)FindResource("Muted"), false, 10));
+        }
+        else
+        {
+            foreach (var kv in _config.GameProfiles.OrderBy(k => k.Value.Name))
+                gsv.Children.Add(GameProfileRow(kv.Key, kv.Value));
+        }
+        gpCard.Child = gsv;
+        host.Children.Add(gpCard);
 
         var skyCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
         var ss = new StackPanel();
@@ -1423,7 +1933,7 @@ public partial class MainWindow : Window
         host.Children.Add(diag);
 
         var applyRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 20, 0, 0) };
-        var apply = Btn("Apply to Roblox", true, 170); apply.Click += (_, _) => SaveAndApply();
+        var apply = Btn("Apply to Roblox", true, 170); apply.Click += ApplyToRoblox_Click; _applyBtn = apply;
         var reset = Btn("Reset", false, 110); reset.Margin = new Thickness(12, 0, 0, 0); reset.Click += ResetFlags_Click;
         _flagsStatus = T("", 12.5, (Brush)FindResource("Muted"), false);
         _flagsStatus.VerticalAlignment = VerticalAlignment.Center;
@@ -1436,6 +1946,39 @@ public partial class MainWindow : Window
         Grid.SetRow(scroll, 1); g.Children.Add(scroll);
         _fastFlagsScroll = scroll;
         return g;
+    }
+
+    private async void ApplyToRoblox_Click(object sender, RoutedEventArgs e)
+    {
+        var btn = _applyBtn;
+        if (btn == null) { SaveAndApply(); return; }
+
+        // 1) press feedback — quick scale-down
+        var tt = btn.RenderTransform as ScaleTransform ?? new ScaleTransform(1, 1);
+        btn.RenderTransform = tt;
+        tt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.94, TimeSpan.FromMilliseconds(90)) { EasingFunction = EaseOut() });
+        tt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.94, TimeSpan.FromMilliseconds(90)) { EasingFunction = EaseOut() });
+        btn.Opacity = 0.7;
+
+        // 2) short "Applying..." state so the press is visible
+        var original = "Apply to Roblox";
+        btn.Content = "Applying...";
+        try { await Task.Delay(220); } catch { }
+
+        // 3) do the actual apply (background, keeps UI responsive)
+        string status = "";
+        await Task.Run(() => { try { status = RobloxLauncher.ApplyFlags(_config); } catch { } });
+
+        // 4) success feedback — restore, green check + pop
+        btn.Opacity = 1;
+        btn.Content = "Applied ✓";
+        tt.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut } });
+        tt.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut } });
+        _flagsStatus.Text = status;
+        _flagsStatus.Foreground = (Brush)FindResource("Green");
+
+        try { await Task.Delay(900); } catch { }
+        btn.Content = Localization.T(original);
     }
 
     private void SaveAndApply()
@@ -1514,15 +2057,45 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (string.IsNullOrEmpty(_config.BackgroundUrl) || !File.Exists(BgCacheFile)) return;
-            var img = new BitmapImage();
-            img.BeginInit();
-            img.CacheOption = BitmapCacheOption.OnLoad;
-            img.StreamSource = File.OpenRead(BgCacheFile);
-            img.EndInit();
-            img.Freeze();
-            SetBackground(img);
-            _bgUrlBox.Text = _config.BackgroundUrl;
+            if (string.IsNullOrEmpty(_config.BackgroundUrl)) return;
+            if (File.Exists(BgCacheFile))
+            {
+                try
+                {
+                    var img = new BitmapImage();
+                    img.BeginInit();
+                    img.CacheOption = BitmapCacheOption.OnLoad;
+                    img.StreamSource = File.OpenRead(BgCacheFile);
+                    img.EndInit();
+                    img.Freeze();
+                    SetBackground(img);
+                    _bgUrlBox.Text = _config.BackgroundUrl;
+                    return;
+                }
+                catch { try { File.Delete(BgCacheFile); } catch { } }
+            }
+            // Cache missing or corrupted (e.g. wiped by an update) — silently re-download
+            // from the saved URL so the background always survives.
+            var url = _config.BackgroundUrl;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var bytes = await Http.GetByteArrayAsync(url);
+                    using var ms = new MemoryStream(bytes);
+                    var img = new BitmapImage();
+                    img.BeginInit();
+                    img.CacheOption = BitmapCacheOption.OnLoad;
+                    img.StreamSource = ms;
+                    img.EndInit();
+                    img.Freeze();
+                    Dispatcher.Invoke(() => SetBackground(img));
+                    Directory.CreateDirectory(Path.GetDirectoryName(BgCacheFile)!);
+                    File.WriteAllBytes(BgCacheFile, bytes);
+                    Dispatcher.Invoke(() => { try { _bgUrlBox.Text = url; } catch { } });
+                }
+                catch { }
+            });
         }
         catch { }
     }
@@ -1714,7 +2287,7 @@ public partial class MainWindow : Window
         return list.FirstOrDefault();
     }
 
-    private static List<string> FindAllRobloxCursorsFolders()
+    internal static List<string> FindAllRobloxCursorsFolders()
     {
         var versionsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Roblox", "Versions");
         var result = new List<string>();
@@ -1728,7 +2301,7 @@ public partial class MainWindow : Window
         return result;
     }
 
-    private static void EnsureMigratedBackups()
+    internal static void EnsureMigratedBackups()
     {
         // Migrate old per-version NaxiBackup/Cursors -> central CursorBackupDir
         try
@@ -2228,7 +2801,7 @@ public partial class MainWindow : Window
         catch (Exception ex) { if (_cursorStatus != null) _cursorStatus.Text = $"Error: {ex.Message}"; }
     }
 
-    private static bool TryExtractEmbeddedDefault(string resourceName, string destPath)
+    internal static bool TryExtractEmbeddedDefault(string resourceName, string destPath)
     {
         try
         {
@@ -2242,6 +2815,62 @@ public partial class MainWindow : Window
             s.CopyTo(fs);
             return true;
         } catch { return false; }
+    }
+
+    internal static void ApplyCursorSetForLaunch(AppConfig config, string? normal, string? pointing, string? shift)
+    {
+        try
+        {
+            string? cn = string.IsNullOrWhiteSpace(normal) ? NullIfEmpty(config.NormalCursorPath) : normal;
+            string? cp = string.IsNullOrWhiteSpace(pointing) ? NullIfEmpty(config.PointingCursorPath) : pointing;
+            string? cs = string.IsNullOrWhiteSpace(shift) ? NullIfEmpty(config.ShiftCursorPath) : shift;
+
+            EnsureMigratedBackups();
+            Directory.CreateDirectory(CursorBackupDir);
+            bool firstBackupDone = false;
+            foreach (var dir in FindAllRobloxCursorsFolders())
+            {
+                if (firstBackupDone) break;
+                var tex = Path.Combine(dir, "..", "..", "MouseLockedCursor.png");
+                foreach (var (name, srcPath) in new[] { ("ArrowFarCursor.png", Path.Combine(dir, "ArrowFarCursor.png")), ("ArrowCursor.png", Path.Combine(dir, "ArrowCursor.png")), ("MouseLockedCursor.png", Path.Combine(dir, "MouseLockedCursor.png")) })
+                {
+                    var bak = Path.Combine(CursorBackupDir, name);
+                    if (!File.Exists(bak) && File.Exists(srcPath)) File.Copy(srcPath, bak, false);
+                }
+                if (File.Exists(tex))
+                {
+                    var bak = Path.Combine(CursorBackupDir, "MouseLockedCursor.png");
+                    if (!File.Exists(bak)) File.Copy(tex, bak, false);
+                }
+                firstBackupDone = true;
+            }
+
+            foreach (var dir in FindAllRobloxCursorsFolders())
+            {
+                ApplyOneCursor(cn, Path.Combine(dir, "ArrowFarCursor.png"));
+                ApplyOneCursor(cp, Path.Combine(dir, "ArrowCursor.png"));
+                ApplyOneCursor(cs, Path.Combine(dir, "MouseLockedCursor.png"));
+                ApplyOneCursor(cs, Path.Combine(dir, "..", "..", "MouseLockedCursor.png"));
+            }
+
+            var curr = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
+            if (curr != null) { config.RobloxVersion = Path.GetFileName(curr); RobloxLauncher.SaveConfig(config); }
+        }
+        catch { }
+    }
+
+    static string? NullIfEmpty(string s)
+    {
+        return string.IsNullOrWhiteSpace(s) ? null : s;
+    }
+
+    static void ApplyOneCursor(string? src, string dest)
+    {
+        if (!string.IsNullOrEmpty(src) && File.Exists(src)) { File.Copy(src, dest, true); return; }
+        if (!TryExtractEmbeddedDefault(Path.GetFileName(dest), dest))
+        {
+            if (File.Exists(dest)) File.Delete(dest);
+        }
     }
 
     private void ResetCursors_Click(object sender, RoutedEventArgs e)
@@ -2415,12 +3044,26 @@ public partial class MainWindow : Window
         g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         g.Margin = new Thickness(72, 22, 40, 0);
 
-        var title = new StackPanel();
+        var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(T("Emote Wheel", 26, (Brush)FindResource("Text"), true));
+        if (!HasPro)
+        {
+            var proBadge = new Border
+            {
+                Background = (Brush)FindResource("AccentGradient"),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(10, 3, 10, 4),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(14, 4, 0, 0),
+                Child = new TextBlock { Text = "PRO", FontSize = 11, FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("AccentText") }
+            };
+            title.Children.Add(proBadge);
+        }
         Grid.SetRow(title, 0); g.Children.Add(title);
 
         var host = new StackPanel { Margin = new Thickness(0, 20, 0, 0) };
         host.Children.Add(T("Replace Roblox emote wheel textures with custom PNG images. Upload your own base image — @2x and @3x variants are applied automatically.", 13, (Brush)FindResource("Muted"), false));
+        if (!HasPro) host.Children.Add(T("Customizing the emote wheel requires Pro.", 12.5, (Brush)FindResource("Accent"), false, 4));
 
         var emotesDir = FindRobloxEmotesFolder();
         if (emotesDir == null)
@@ -2459,7 +3102,7 @@ public partial class MainWindow : Window
         host.Children.Add(EmoteCard("Selected Line", "SelectedLine.png — thin line indicator", () => _emoteSelectedLineFile, v => _emoteSelectedLineFile = v, v => _config.EmoteSelectedLinePath = v, _emoteSelectedLinePreview));
 
         var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 20, 0, 0) };
-        var applyBtn = Btn("Apply Emotes", true, 180);
+        var applyBtn = Btn(HasPro ? "Apply Emotes" : "🔒 Apply Emotes", true, 180);
         applyBtn.Click += ApplyEmotes_Click;
         var resetBtn = Btn("Reset to Default", false, 180);
         resetBtn.Margin = new Thickness(12, 0, 0, 0);
@@ -2501,9 +3144,10 @@ public partial class MainWindow : Window
         info.Children.Add(pathText);
 
         var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
-        var importBtn = Btn("Import", false, 100);
-        importBtn.Click += (_, _) =>
+        var importBtn = Btn(HasPro ? "Import" : "🔒 Import", false, 100);
+        importBtn.Click += async (_, _) =>
         {
+            if (!await EnsureProAsync()) return;
             var ofd = new Microsoft.Win32.OpenFileDialog { Filter = "PNG files (*.png)|*.png", Title = $"Select {title}" };
             if (ofd.ShowDialog() == true)
             {
@@ -2541,8 +3185,9 @@ public partial class MainWindow : Window
         return card;
     }
 
-    private void ApplyEmotes_Click(object sender, RoutedEventArgs e)
+    private async void ApplyEmotes_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureProAsync()) return;
         var emotesDir = FindRobloxEmotesFolder();
         if (emotesDir == null) { _emoteStatus.Text = Localization.T("Roblox not found"); return; }
         ApplyEmotes(emotesDir);
@@ -2621,6 +3266,191 @@ public partial class MainWindow : Window
             _emoteStatus.Foreground = (Brush)FindResource("Accent");
         }
         catch (Exception ex) { _emoteStatus.Text = $"Error: {ex.Message}"; }
+    }
+
+    private Grid GameProfileRow(string key, GameProfile p)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        info.Children.Add(T(p.Name, 14.5, (Brush)FindResource("Text"), true));
+        string status = !p.Enabled
+            ? Localization.T("Off")
+            : p.FpsUnlock ? Localization.T("On") + $" · FPS {p.FpsLimit}" : Localization.T("On");
+        info.Children.Add(T(status, 12, (Brush)FindResource("Muted"), false, 2));
+        Grid.SetColumn(info, 0); grid.Children.Add(info);
+
+        var editBtn = Btn(HasPro ? "Edit" : "🔒 Edit", false, 110);
+        editBtn.VerticalAlignment = VerticalAlignment.Center;
+        editBtn.Click += async (_, _) =>
+        {
+            if (!await EnsureProAsync()) return;
+            ShowGameProfileDialog(key);
+        };
+        Grid.SetColumn(editBtn, 1); grid.Children.Add(editBtn);
+        return grid;
+    }
+
+    private void ShowGameProfileDialog(string key)
+    {
+        if (_config.GameProfiles == null || !_config.GameProfiles.TryGetValue(key, out var src) || src == null) return;
+        var p = new GameProfile
+        {
+            Name = src.Name,
+            Enabled = src.Enabled,
+            FpsUnlock = src.FpsUnlock,
+            FpsLimit = src.FpsLimit,
+            NoShadows = src.NoShadows,
+            PerfMode = src.PerfMode,
+            FutureLighting = src.FutureLighting,
+            NoPostFx = src.NoPostFx,
+            NoTelemetry = src.NoTelemetry
+        };
+
+        var dialog = new Window
+        {
+            Title = "Game profile",
+            Owner = this,
+            Width = 540,
+            Height = 660,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var shell = new Border
+        {
+            CornerRadius = new CornerRadius(22),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(50, 66, 84)),
+            BorderThickness = new Thickness(1),
+            ClipToBounds = true,
+            Background = new LinearGradientBrush(Color.FromRgb(10, 18, 31), Color.FromRgb(13, 25, 42), new Point(0, 0), new Point(1, 1))
+        };
+        var root = new Grid();
+        var close = new Button
+        {
+            Content = "✕",
+            FontSize = 23,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(18)
+        };
+        close.Style = (Style)FindResource("CloseCrossButton");
+        close.Click += (_, _) => dialog.Close();
+
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(36, 78, 36, 24) };
+        var content = new StackPanel();
+        content.Children.Add(T("Game profile", 24, (Brush)FindResource("Text"), true));
+        content.Children.Add(T(p.Name, 14, (Brush)FindResource("Accent"), false, 4));
+
+        var fpsBox = new TextBox { Style = (Style)FindResource("InputBox"), Width = 110, Text = p.FpsLimit.ToString(), IsEnabled = p.FpsUnlock, VerticalAlignment = VerticalAlignment.Center };
+
+        content.Children.Add(ToggleRow("Enabled", "Apply this profile when the game launches.", p.Enabled, v => p.Enabled = v));
+
+        content.Children.Add(ToggleRow("FPS Unlocker", "Remove the default FPS cap in Roblox.", p.FpsUnlock, v => { p.FpsUnlock = v; fpsBox.IsEnabled = v; }));
+        var fpsRow = new Grid { Margin = new Thickness(0, 16, 0, 0) };
+        fpsRow.ColumnDefinitions.Add(new ColumnDefinition());
+        fpsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var fpsLabel = new StackPanel();
+        fpsLabel.Children.Add(T("FPS Limit", 15.5, (Brush)FindResource("Text"), true));
+        fpsLabel.Children.Add(T("Target frames per second (1–9999)", 12.5, (Brush)FindResource("Muted"), false, 3));
+        Grid.SetColumn(fpsLabel, 0); fpsRow.Children.Add(fpsLabel);
+        Grid.SetColumn(fpsBox, 1); fpsRow.Children.Add(fpsBox);
+        content.Children.Add(fpsRow);
+
+        content.Children.Add(ToggleRow("Disable Shadows", "Turn off dynamic shadows for extra FPS.", p.NoShadows, v => p.NoShadows = v));
+        content.Children.Add(ToggleRow("Performance Mode", "Lowest quality, no grass and no anti-aliasing for maximum FPS.", p.PerfMode, v => p.PerfMode = v));
+        content.Children.Add(ToggleRow("Future Lighting", "Force the newest Roblox lighting engine.", p.FutureLighting, v => p.FutureLighting = v));
+        content.Children.Add(ToggleRow("Disable Post-Effects", "Turn off blur, bloom and color effects.", p.NoPostFx, v => p.NoPostFx = v));
+        content.Children.Add(ToggleRow("Disable Telemetry", "Send less analytics data to Roblox servers.", p.NoTelemetry, v => p.NoTelemetry = v));
+
+        content.Children.Add(SectionLabel("GAME CURSORS"));
+        content.Children.Add(T("Per-game cursors override the global ones — clear a cursor to use the global setting.", 12, (Brush)FindResource("Muted"), false, 2));
+
+        StackPanel CursorPickRow(string label, Func<string> get, Action<string> set, out TextBlock status)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+            var lbl = T(label, 14, (Brush)FindResource("Text"), false);
+            lbl.VerticalAlignment = VerticalAlignment.Center;
+            lbl.Width = 140;
+            row.Children.Add(lbl);
+            var st = T(string.IsNullOrEmpty(get()) ? Localization.T("Global") : Path.GetFileName(get()), 12, (Brush)FindResource("Muted"), false);
+            st.VerticalAlignment = VerticalAlignment.Center;
+            st.Margin = new Thickness(6, 0, 0, 0);
+            var importBtn = Btn("Import", false, 90);
+            importBtn.Click += (_, _) =>
+            {
+                var ofd = new Microsoft.Win32.OpenFileDialog { Filter = "PNG files (*.png)|*.png", Title = label };
+                if (ofd.ShowDialog() == true)
+                {
+                    set(ofd.FileName);
+                    st.Text = Path.GetFileName(ofd.FileName);
+                    st.Foreground = (Brush)FindResource("Text");
+                }
+            };
+            row.Children.Add(importBtn);
+            var clearBtn = Btn("Clear", false, 90);
+            clearBtn.Margin = new Thickness(8, 0, 0, 0);
+            clearBtn.Click += (_, _) =>
+            {
+                set("");
+                st.Text = Localization.T("Global");
+                st.Foreground = (Brush)FindResource("Muted");
+            };
+            row.Children.Add(clearBtn);
+            status = st;
+            return row;
+        }
+
+        content.Children.Add(CursorPickRow("Normal cursor", () => p.CursorNormal, v => p.CursorNormal = v, out var normStatus));
+        content.Children.Add(CursorPickRow("Pointing cursor", () => p.CursorPointing, v => p.CursorPointing = v, out var pointStatus));
+        content.Children.Add(CursorPickRow("Shift-Lock cursor", () => p.CursorShiftLock, v => p.CursorShiftLock = v, out var shiftStatus));
+
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 22, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
+        var saveBtn = Btn("Save", true, 150);
+        var removeBtn = Btn("Remove", false, 150);
+        removeBtn.Margin = new Thickness(12, 0, 0, 0);
+        var dlgStatus = T("", 12.5, (Brush)FindResource("Muted"), false);
+        dlgStatus.VerticalAlignment = VerticalAlignment.Center;
+        dlgStatus.Margin = new Thickness(14, 0, 0, 0);
+        btnRow.Children.Add(saveBtn); btnRow.Children.Add(removeBtn); btnRow.Children.Add(dlgStatus);
+        content.Children.Add(btnRow);
+
+        scroll.Content = content;
+        root.Children.Add(scroll);
+        root.Children.Add(close);
+        dialog.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) dialog.Close(); };
+        shell.Child = root;
+        dialog.Content = shell;
+
+        saveBtn.Click += (_, _) =>
+        {
+            if (int.TryParse(fpsBox.Text.Trim(), out var fps)) p.FpsLimit = Math.Clamp(fps, 1, 9999);
+            _config.GameProfiles[key] = p;
+            RobloxLauncher.SaveConfig(_config);
+            RebuildFastFlagsPage();
+            dlgStatus.Text = Localization.T("Profile saved");
+        };
+        removeBtn.Click += (_, _) =>
+        {
+            _config.GameProfiles.Remove(key);
+            RobloxLauncher.SaveConfig(_config);
+            RebuildFastFlagsPage();
+            dialog.Close();
+        };
+
+        dialog.ShowDialog();
+    }
+
+    private void RebuildFastFlagsPage()
+    {
+        var showing = ReferenceEquals(PageHost.Content, _fastFlags);
+        _fastFlags = BuildFastFlags();
+        if (showing) PageHost.Content = _fastFlags;
     }
 
     private Grid BuildMaintenance()
@@ -2822,6 +3652,45 @@ public partial class MainWindow : Window
         _bgStatus = T("", 12.5, (Brush)FindResource("Muted"), false, 10);
         isv.Children.Add(_bgStatus);
 
+        var themeRow = new Grid { Margin = new Thickness(0, 18, 0, 0) };
+        themeRow.ColumnDefinitions.Add(new ColumnDefinition());
+        themeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var themeLabel = new StackPanel();
+        themeLabel.Children.Add(T("Theme", 15.5, (Brush)FindResource("Text"), true));
+        themeLabel.Children.Add(T("Dark or light interface.", 12.5, (Brush)FindResource("Muted"), false, 3));
+        Grid.SetColumn(themeLabel, 0); themeRow.Children.Add(themeLabel);
+        var themeBtn = Btn("Theme: " + (string.Equals(_config.Theme, "Light", StringComparison.OrdinalIgnoreCase) ? "Light" : "Dark"), false, 220);
+        themeBtn.Height = 46; themeBtn.Click += ThemeBtn_Click;
+        Grid.SetColumn(themeBtn, 1); themeRow.Children.Add(themeBtn);
+        isv.Children.Add(themeRow);
+
+        var accentRow = new Grid { Margin = new Thickness(0, 18, 0, 0) };
+        accentRow.ColumnDefinitions.Add(new ColumnDefinition());
+        accentRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var accentLabel = new StackPanel();
+        accentLabel.Children.Add(T("Accent color", 15.5, (Brush)FindResource("Text"), true));
+        accentLabel.Children.Add(T("Color of buttons, toggles and active elements.", 12.5, (Brush)FindResource("Muted"), false, 3));
+        Grid.SetColumn(accentLabel, 0); accentRow.Children.Add(accentLabel);
+        var swatches = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var a in ThemeService.Accents)
+        {
+            bool sel = a.Name.Equals(_config.Accent, StringComparison.OrdinalIgnoreCase);
+            var sw = new Button
+            {
+                Style = (Style)FindResource("SwatchButton"),
+                Background = new SolidColorBrush(a.Base),
+                Margin = new Thickness(0, 0, 8, 0),
+                ToolTip = ThemeService.MaxOnly.Contains(a.Name) ? a.Name + "  ·  MAX" : a.Name,
+            };
+            if (sel) { sw.BorderBrush = (Brush)FindResource("Text"); }
+            System.Windows.Automation.AutomationProperties.SetAutomationId(sw, "Swatch" + a.Name);
+            var nm = a.Name;
+            sw.Click += (_, _) => AccentSwatch_Click(nm);
+            swatches.Children.Add(sw);
+        }
+        Grid.SetColumn(swatches, 1); accentRow.Children.Add(swatches);
+        isv.Children.Add(accentRow);
+
         isv.Children.Add(ToggleRow("Hide Update Log", "Show or completely hide the Update log block on Home tab.", _config.HideUpdateLog, v =>
         {
             _config.HideUpdateLog = v;
@@ -2844,6 +3713,31 @@ public partial class MainWindow : Window
         gv.Children.Add(ToggleRow("Update Notifications", "Receive system popups when a new version is released.", _config.Notifications, v => { _config.Notifications = v; RobloxLauncher.SaveConfig(_config); }));
         general.Child = gv;
         host.Children.Add(general);
+
+        var netCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
+        var nv = new StackPanel();
+        nv.Children.Add(SectionLabel("NETWORK"));
+        nv.Children.Add(ToggleRow("Bypass ISP Blocks (Zapret)", "DPI bypass so Roblox images, Discord and other services load on ISPs that block them. Windows will ask for administrator permission when enabling.", _config.Zapret, v => _ = ZapretToggleAsync(v)));
+
+        var presetRow = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        presetRow.ColumnDefinitions.Add(new ColumnDefinition());
+        presetRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var presetLabel = new StackPanel();
+        presetLabel.Children.Add(T("Preset", 15.5, (Brush)FindResource("Text"), true));
+        presetLabel.Children.Add(T("Different ISPs need different strategies. If the default does not help, cycle through ALT presets.", 12.5, (Brush)FindResource("Muted"), false, 3));
+        Grid.SetColumn(presetLabel, 0); presetRow.Children.Add(presetLabel);
+        _zapretPresetBtn = Btn("Preset: " + ZapretPresetDisplay(_config.ZapretPreset) + "  ▾", false, 260);
+        _zapretPresetBtn.Height = 46;
+        _zapretPresetBtn.Padding = new Thickness(18, 8, 18, 8);
+        _zapretPresetBtn.Click += ZapretPreset_Click;
+        Grid.SetColumn(_zapretPresetBtn, 1); presetRow.Children.Add(_zapretPresetBtn);
+        nv.Children.Add(presetRow);
+
+        _zapretStatus = new TextBlock { FontSize = 12, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
+        nv.Children.Add(_zapretStatus);
+        UpdateZapretStatus();
+        netCard.Child = nv;
+        host.Children.Add(netCard);
 
         var langCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
         var lv = new StackPanel();
@@ -2902,11 +3796,898 @@ public partial class MainWindow : Window
         rpcCard.Child = rp;
         host.Children.Add(rpcCard);
 
+        // --- game card: auto-rejoin toggle ---
+        var gameCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
+        var gcv = new StackPanel();
+        gcv.Children.Add(SectionLabel("Game"));
+        gcv.Children.Add(ToggleRow("Auto-rejoin", "If Roblox disconnects, offer to rejoin the same game automatically after 10 seconds.", _config.AutoRejoin, v =>
+        {
+            _config.AutoRejoin = v;
+            RobloxLauncher.SaveConfig(_config);
+            if (v) EnsureRejoinWatcher();
+        }));
+        if (_config.IsMax)
+        {
+            gcv.Children.Add(ToggleRow("Quick launch hotkey (Alt+R)", "Press Alt+R anywhere for the instant game search overlay.", _config.QuickHotkey, v =>
+            {
+                _config.QuickHotkey = v;
+                RobloxLauncher.SaveConfig(_config);
+                ApplyQuickHotkey();
+            }));
+            gcv.Children.Add(ToggleRow("Show current game in Discord", "Rich Presence automatically switches to the Roblox game you are playing.", _config.RpcAutoGame, v =>
+            {
+                _config.RpcAutoGame = v;
+                RobloxLauncher.SaveConfig(_config);
+                if (!v) { DiscordRpcService.AutoGameName = null; DiscordRpcService.Update(_config); }
+            }));
+        }
+        gameCard.Child = gcv;
+        host.Children.Add(gameCard);
+
+        // --- backup card: export / import settings ---
+        var backupCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(24), Margin = new Thickness(0, 18, 0, 0) };
+        var bv = new StackPanel();
+        bv.Children.Add(SectionLabel("Backup"));
+        bv.Children.Add(T("Export all settings to a file or import them back — handy when moving to another PC.", 12.5, (Brush)FindResource("Muted"), false, 4));
+        var backupRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+        var exportBtn = Btn(Localization.T("Export settings"), true, 170);
+        exportBtn.Click += (_, _) => ExportSettings();
+        var importBtn = Btn(Localization.T("Import settings"), false, 170);
+        importBtn.Margin = new Thickness(10, 0, 0, 0);
+        importBtn.Click += (_, _) => ImportSettings();
+        backupRow.Children.Add(exportBtn);
+        backupRow.Children.Add(importBtn);
+        bv.Children.Add(backupRow);
+        backupCard.Child = bv;
+        host.Children.Add(backupCard);
+
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = host, ClipToBounds = true };
         SmoothScroll.SetEnabled(scroll, true);
         Grid.SetRow(scroll, 1); g.Children.Add(scroll);
         _settingsScroll = scroll;
         return g;
+    }
+
+    // ---------- settings export / import ----------
+
+    // Serializes the whole AppConfig (fast flags, folders, favorites, accounts
+    // metadata, theme…) to a JSON file the user can keep or move to another PC.
+    // Account tokens are stored protected (DPAPI) and are portable only between
+    // machines of the same user, which is the safest default.
+    private async void ExportSettings()
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = Localization.T("Export settings"),
+            FileName = "naxi-bootstrap-settings.json",
+            Filter = "JSON (*.json)|*.json"
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(_config, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(dlg.FileName, json);
+            MessageBox.Show(this, Localization.T("Settings exported."), "Naxi Bootstrap", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Naxi Bootstrap", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ImportSettings()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = Localization.T("Import settings"),
+            Filter = "JSON (*.json)|*.json"
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            var json = await File.ReadAllTextAsync(dlg.FileName);
+            var imported = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json);
+            if (imported == null) throw new InvalidDataException("bad file");
+            // keep session-only bits: current Pro state must stay server-driven
+            imported.IsPro = _config.IsPro;
+            imported.ProExpiresAt = _config.ProExpiresAt;
+            _config = imported;
+            RobloxLauncher.SaveConfig(_config);
+            ThemeService.Apply(_config.Theme, _config.Accent);
+            if (Enum.TryParse<Lang>(_config.Language, true, out var lang) && Localization.Current != lang) Localization.Set(lang);
+            FontFamily = new FontFamily(string.IsNullOrWhiteSpace(_config.FontName) ? "Segoe UI" : _config.FontName);
+            RebuildAllPagesKeepCurrent();
+            MessageBox.Show(this, Localization.T("Settings imported."), "Naxi Bootstrap", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Naxi Bootstrap", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task SyncProStatusAsync()
+    {
+        var result = await ProLicense.CheckAsync();
+        if (!result.Ok) return;
+        var changed = _config.IsPro != result.Pro || _config.ProExpiresAt != result.ExpiresAt
+            || _config.IsMax != result.Max || (result.Max && _config.MaxExpiresAt != result.ExpiresAt);
+        _config.IsPro = result.Pro;
+        _config.IsMax = result.Max;
+        _config.ProExpiresAt = result.ExpiresAt;
+        if (result.Max) _config.MaxExpiresAt = result.ExpiresAt;
+        if (!changed) return;
+        RobloxLauncher.SaveConfig(_config);
+        Dispatcher.Invoke(RefreshProPage);
+    }
+
+    private System.Windows.Media.Imaging.BitmapFrame? _proIconFrame;
+    private System.Drawing.Icon? _proTrayIcon;
+
+    private void RefreshProPage()
+    {
+        var showing = ReferenceEquals(PageHost.Content, _pro);
+        _pro = BuildPro();
+        if (showing) PageHost.Content = _pro;
+        ApplyProBranding();
+    }
+
+    private static string? ProTimeLeftText(string? expiresAtIso)
+    {
+        if (string.IsNullOrWhiteSpace(expiresAtIso)) return null;
+        if (!DateTimeOffset.TryParse(expiresAtIso, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var exp)) return null;
+        var left = exp - DateTimeOffset.UtcNow;
+        if (left <= TimeSpan.Zero) return null;
+        if (left.TotalDays >= 1)
+            return Localization.T("Pro ends in # days").Replace("#", Math.Ceiling(left.TotalDays).ToString("0"));
+        return Localization.T("Pro ends in # h").Replace("#", Math.Max(1, (int)Math.Ceiling(left.TotalHours)).ToString("0"));
+    }
+
+    private static string? MaxTimeLeftText(string? expiresAtIso)
+    {
+        if (string.IsNullOrWhiteSpace(expiresAtIso)) return null;
+        if (!DateTimeOffset.TryParse(expiresAtIso, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var exp)) return null;
+        var left = exp - DateTimeOffset.UtcNow;
+        if (left <= TimeSpan.Zero) return null;
+        if (left.TotalDays >= 1)
+            return Localization.T("Max ends in # days").Replace("#", Math.Ceiling(left.TotalDays).ToString("0"));
+        return Localization.T("Max ends in # h").Replace("#", Math.Max(1, (int)Math.Ceiling(left.TotalHours)).ToString("0"));
+    }
+
+    private void ThemeBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _config.Theme = string.Equals(_config.Theme, "Light", StringComparison.OrdinalIgnoreCase) ? "Dark" : "Light";
+        RobloxLauncher.SaveConfig(_config);
+        ThemeService.Apply(_config.Theme, _config.Accent);
+        RebuildAllPagesKeepCurrent();
+    }
+
+    private void AccentSwatch_Click(string name)
+    {
+        if (ThemeService.MaxOnly.Contains(name) && !_config.IsMax)
+        {
+            ShowProInviteDialog(allowWhenActive: true);
+            return;
+        }
+        _config.Accent = name;
+        RobloxLauncher.SaveConfig(_config);
+        ThemeService.Apply(_config.Theme, _config.Accent);
+        RebuildAllPagesKeepCurrent();
+    }
+
+    private void RebuildAllPagesKeepCurrent()
+    {
+        var cur = PageHost.Content;
+        bool onHome = ReferenceEquals(cur, _home), onGames = ReferenceEquals(cur, _games), onNews = ReferenceEquals(cur, _news), onAccounts = ReferenceEquals(cur, _accounts),
+             onFlags = ReferenceEquals(cur, _fastFlags), onCursors = ReferenceEquals(cur, _cursors), onEmotes = ReferenceEquals(cur, _emotes),
+             onMaint = ReferenceEquals(cur, _maintenance), onSettings = ReferenceEquals(cur, _settings), onPro = ReferenceEquals(cur, _pro),
+             onAbout = ReferenceEquals(cur, _about), onLegal = ReferenceEquals(cur, _legal);
+        _home = BuildHome(); _games = BuildGameHub(); _news = BuildNews(); _accounts = BuildAccounts(); _fastFlags = BuildFastFlags(); _cursors = BuildCursors();
+        _emotes = BuildEmotes(); _maintenance = BuildMaintenance(); _settings = BuildSettings(); _pro = BuildPro(); _about = BuildAbout(); _legal = BuildLegal();
+        PageHost.Content = onGames ? _games : onNews ? _news : onAccounts ? _accounts : onFlags ? _fastFlags : onCursors ? _cursors : onEmotes ? _emotes
+            : onMaint ? _maintenance : onSettings ? _settings : onPro ? _pro : onAbout ? _about : onLegal ? _legal : _home;
+    }
+
+    private void ApplyFfPreset(string preset)
+    {
+        if (preset == "potato")
+        {
+            _config.FpsUnlock = true; _config.FpsLimit = 999; _config.NoShadows = true; _config.PerfMode = true;
+            _config.FutureLighting = false; _config.NoPostFx = true; _config.NoTelemetry = true;
+        }
+        else if (preset == "balanced")
+        {
+            _config.FpsUnlock = true; _config.NoShadows = true; _config.PerfMode = false;
+            _config.FutureLighting = false; _config.NoPostFx = true; _config.NoTelemetry = true;
+        }
+        else
+        {
+            _config.FpsUnlock = true; _config.NoShadows = false; _config.PerfMode = false;
+            _config.FutureLighting = true; _config.NoPostFx = false; _config.NoTelemetry = true;
+        }
+        SaveAndApply();
+        RebuildFastFlagsPage();
+    }
+
+    private void RebuildSettingsPage()
+    {
+        var showing = ReferenceEquals(PageHost.Content, _settings);
+        _settings = BuildSettings();
+        if (showing) PageHost.Content = _settings;
+    }
+
+    private async Task ZapretToggleAsync(bool on)
+    {
+        if (!on)
+        {
+            _config.Zapret = false;
+            RobloxLauncher.SaveConfig(_config);
+            await Task.Run(() => { try { ZapretService.Stop(); } catch { } });
+            RebuildSettingsPage();
+            return;
+        }
+        _config.Zapret = true;
+        RobloxLauncher.SaveConfig(_config);
+        bool ok = await Task.Run(() => { try { return ZapretService.Start(_config.ZapretPreset); } catch { return false; } });
+        if (!ok)
+        {
+            _config.Zapret = false;
+            RobloxLauncher.SaveConfig(_config);
+        }
+        RebuildSettingsPage();
+    }
+
+    private async void ZapretPreset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_presetPopup != null && _presetPopup.IsOpen) { _presetPopup.IsOpen = false; return; }
+        var list = new StackPanel { MinWidth = 236 };
+        foreach (var name in ZapretService.PresetNames())
+        {
+            bool sel = string.Equals(name, _config.ZapretPreset, StringComparison.OrdinalIgnoreCase);
+            var row = new Border { Padding = new Thickness(12, 8, 12, 8), CornerRadius = new CornerRadius(8), Margin = new Thickness(4, 1, 4, 1), Background = Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
+            var sp = new StackPanel { Orientation = Orientation.Horizontal };
+            sp.Children.Add(new TextBlock { Text = sel ? "\uE73E" : "", FontFamily = NavIconFont, FontSize = 12, Width = 20, Foreground = (Brush)FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center });
+            sp.Children.Add(new TextBlock { Text = ZapretPresetDisplay(name), FontSize = 13, FontWeight = sel ? FontWeights.SemiBold : FontWeights.Normal, Foreground = (Brush)FindResource(sel ? "Accent" : "Text"), VerticalAlignment = VerticalAlignment.Center });
+            row.Child = sp;
+            var captured = name;
+            row.MouseEnter += (_, _) => row.Background = (Brush)FindResource("NavHover");
+            row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+            row.MouseLeftButtonUp += (_, _) => { _presetPopup!.IsOpen = false; SelectZapretPreset(captured); };
+            list.Children.Add(row);
+        }
+        var scroll = new ScrollViewer { MaxHeight = 384, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = list };
+        var card = new Border { Background = (Brush)FindResource("Surface"), BorderBrush = (Brush)FindResource("Stroke"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(4), Child = scroll, Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 22, ShadowDepth = 0, Opacity = 0.45 } };
+        _presetPopup = new System.Windows.Controls.Primitives.Popup { PlacementTarget = _zapretPresetBtn, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true, Child = card };
+        _presetPopup.IsOpen = true;
+    }
+
+    private async void SelectZapretPreset(string name)
+    {
+        _config.ZapretPreset = name;
+        RobloxLauncher.SaveConfig(_config);
+        if (_zapretPresetBtn != null) _zapretPresetBtn.Content = "Preset: " + ZapretPresetDisplay(name) + "  ▾";
+        if (_config.Zapret)
+        {
+            await Task.Run(() => { try { ZapretService.Restart(name); } catch { } });
+            UpdateZapretStatus();
+        }
+    }
+
+    private static string ZapretPresetDisplay(string name)
+    {
+        var s = name.StartsWith("general", StringComparison.OrdinalIgnoreCase) ? name[7..].Trim() : name.Trim();
+        return s.Length == 0 ? "general" : s.Trim('(', ')');
+    }
+
+    private void UpdateZapretStatus()
+    {
+        if (_zapretStatus == null) return;
+        _zapretStatus.Text = ZapretService.IsRunning()
+            ? $"Zapret is running ({_config.ZapretPreset}) — Roblox images and Discord voice go through the bypass."
+            : _config.Zapret
+                ? "Zapret is enabled but not running — toggle it off and on (administrator permission may be needed)."
+                : "Zapret is not running.";
+    }
+
+    private void ApplyProBranding()
+    {
+        var pro = _config.IsPro || _config.IsMax;
+        var isMax = _config.IsMax;
+        Title = isMax ? "NaxiBootstrap MAX" : pro ? "Naxi Bootstrap PRO" : "Naxi Bootstrap";
+        try
+        {
+            if (pro)
+            {
+                if (_proIconFrame == null)
+                {
+                    using var s = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/Icons/icon-pro.ico")).Stream;
+                    var ms = new MemoryStream();
+                    s.CopyTo(ms);
+                    ms.Position = 0;
+                    _proIconFrame = System.Windows.Media.Imaging.BitmapFrame.Create(ms, System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+                }
+                Icon = _proIconFrame;
+            }
+            else
+            {
+                Icon = null;
+            }
+        }
+        catch { }
+        try
+        {
+            if (LogoBadge != null)
+            {
+                LogoBadge.Background = isMax
+                    ? new LinearGradientBrush(Color.FromRgb(0x8B, 0x5C, 0xF6), Color.FromRgb(0x5B, 0x21, 0xB6), new Point(0, 0), new Point(1, 1))
+                    : pro
+                    ? new LinearGradientBrush(Color.FromRgb(0xE7, 0xC8, 0x77), Color.FromRgb(0xC0, 0x96, 0x3F), new Point(0, 0), new Point(1, 1))
+                    : (Brush)FindResource("AccentGradient");
+                LogoBadge.BorderBrush = new SolidColorBrush(pro ? Color.FromRgb(0x14, 0x14, 0x14) : Color.FromRgb(0x4A, 0x7A, 0x96));
+            }
+        }
+        catch { }
+        try
+        {
+            if (_trayIcon != null)
+            {
+                _trayIcon.Text = Title;
+                if (pro)
+                {
+                    if (_proTrayIcon == null)
+                    {
+                        using var s = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/Icons/icon-pro.ico")).Stream;
+                        _proTrayIcon = new System.Drawing.Icon(s);
+                    }
+                    _trayIcon.Icon = _proTrayIcon;
+                }
+                else if (!string.IsNullOrEmpty(Environment.ProcessPath))
+                {
+                    _trayIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath);
+                }
+            }
+        }
+        catch { }
+    }
+
+    private Grid BuildPro()
+    {
+        var page = new Grid { Margin = new Thickness(72, 22, 40, 0) };
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, ClipToBounds = true };
+        SmoothScroll.SetEnabled(scroll, true);
+        var content = new StackPanel { Width = 620, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 24) };
+
+        var title = new TextBlock
+        {
+            Text = "Naxi Pro",
+            FontSize = 38,
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("TitleGradient"),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        content.Children.Add(title);
+        var pro = _config.IsPro || _config.IsMax;
+        var timeLeft = ProTimeLeftText(_config.ProExpiresAt);
+        var maxTime = MaxTimeLeftText(_config.MaxExpiresAt);
+        var subtitle = T(
+            _config.IsMax ? (maxTime ?? "MAX is active on this PC.")
+            : pro ? (timeLeft ?? "Pro is active on this PC.")
+            : "Unlock Naxi Pro with an invite code.", 14, (Brush)FindResource("Muted"), false, 8);
+        subtitle.TextAlignment = TextAlignment.Center;
+        content.Children.Add(subtitle);
+
+        var proCardCursor = _config.IsPro || _config.IsMax ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.Hand;
+        var card = new Border
+        {
+            Style = (Style)FindResource("Card"),
+            Padding = new Thickness(26),
+            Margin = new Thickness(0, 24, 0, 0),
+            Cursor = proCardCursor,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(74, 122, 150))
+        };
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var icon = new Border
+        {
+            Width = 56,
+            Height = 56,
+            CornerRadius = new CornerRadius(18),
+            Background = (Brush)FindResource("AccentGradient"),
+            Child = new TextBlock { Text = _config.IsPro || _config.IsMax ? "✓" : "✦", FontSize = 27, Foreground = (Brush)FindResource("AccentText"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        };
+        Grid.SetColumn(icon, 0); row.Children.Add(icon);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(18, 0, 18, 0) };
+        text.Children.Add(T(_config.IsMax ? "Naxi Pro — included in MAX" : _config.IsPro ? "Naxi Pro unlocked" : "Upgrade to Pro", 18, (Brush)FindResource("Text"), true));
+        text.Children.Add(T(_config.IsMax ? "Everything Pro offers is already unlocked with Naxi MAX." : _config.IsPro ? (timeLeft ?? "This invite is bound to this computer.") : "Naxi Pro is invite only", 13, (Brush)FindResource("Muted"), false, 4));
+        Grid.SetColumn(text, 1); row.Children.Add(text);
+        if (!_config.IsPro && !_config.IsMax)
+        {
+            var arrow = new TextBlock { Text = "›", FontSize = 34, Foreground = (Brush)FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(arrow, 2); row.Children.Add(arrow);
+            card.MouseLeftButtonUp += (_, _) => ShowProInviteDialog();
+        }
+        card.Child = row;
+        content.Children.Add(card);
+
+        content.Children.Add(BuildMaxCard());
+        content.Children.Add(BuildProScanCard());
+        content.Children.Add(BuildProPerksCard());
+        content.Children.Add(BuildMaxPerksCard());
+
+        scroll.Content = content;
+        page.Children.Add(scroll);
+        return page;
+    }
+
+    // ---------- Naxi MAX ----------
+
+    private Border BuildMaxCard()
+    {
+        var card = new Border
+        {
+            Style = (Style)FindResource("Card"),
+            Padding = new Thickness(26),
+            Margin = new Thickness(0, 18, 0, 0),
+            Cursor = _config.IsMax ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.Hand,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6)),
+            BorderThickness = new Thickness(1)
+        };
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition());
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var icon = new Border
+        {
+            Width = 56,
+            Height = 56,
+            CornerRadius = new CornerRadius(18),
+            Background = new LinearGradientBrush(Color.FromRgb(0x8B, 0x5C, 0xF6), Color.FromRgb(0x5B, 0x21, 0xB6), new Point(0, 0), new Point(1, 1)),
+            Child = new TextBlock { Text = _config.IsMax ? "✓" : "⚡", FontSize = 26, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        };
+        Grid.SetColumn(icon, 0); row.Children.Add(icon);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(18, 0, 18, 0) };
+        var maxTime = MaxTimeLeftText(_config.MaxExpiresAt);
+        text.Children.Add(T(_config.IsMax ? "Naxi MAX unlocked" : "Upgrade to MAX", 18, (Brush)FindResource("Text"), true));
+        text.Children.Add(T(_config.IsMax ? (maxTime ?? "This invite is bound to this computer.") : "Everything in Pro + exclusive MAX powers", 13, (Brush)FindResource("Muted"), false, 4));
+        Grid.SetColumn(text, 1); row.Children.Add(text);
+        if (!_config.IsMax)
+        {
+            var arrow = new TextBlock { Text = "›", FontSize = 34, Foreground = new SolidColorBrush(Color.FromRgb(0x9F, 0x92, 0xFF)), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(arrow, 2); row.Children.Add(arrow);
+            card.MouseLeftButtonUp += (_, _) => ShowProInviteDialog(allowWhenActive: true);
+        }
+        card.Child = row;
+        return card;
+    }
+
+    private FrameworkElement MaxPerkRow(string title, string desc)
+    {
+        var locked = !_config.IsMax;
+        var g = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition());
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var icon = new Border
+        {
+            Width = 40,
+            Height = 40,
+            CornerRadius = new CornerRadius(13),
+            Background = locked ? new SolidColorBrush(Color.FromRgb(24, 30, 40)) : new LinearGradientBrush(Color.FromRgb(0x8B, 0x5C, 0xF6), Color.FromRgb(0x5B, 0x21, 0xB6), new Point(0, 0), new Point(1, 1)),
+            Child = new TextBlock { Text = locked ? "🔒" : "✓", FontSize = 17, Foreground = locked ? (Brush)FindResource("Muted") : Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        };
+        Grid.SetColumn(icon, 0); g.Children.Add(icon);
+        var t = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 10, 0) };
+        t.Children.Add(T(title, 14.5, (Brush)FindResource("Text"), true));
+        t.Children.Add(T(desc, 12, (Brush)FindResource("Muted"), false, 2));
+        Grid.SetColumn(t, 1); g.Children.Add(t);
+        var tag = new TextBlock { Text = locked ? "🔒" : "✓", FontSize = 15, Foreground = locked ? (Brush)FindResource("Muted") : new SolidColorBrush(Color.FromRgb(0x9F, 0x92, 0xFF)), VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(tag, 2); g.Children.Add(tag);
+        return g;
+    }
+
+    private Border BuildMaxPerksCard()
+    {
+        var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(26), Margin = new Thickness(0, 18, 0, 0), BorderBrush = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6)) };
+        var host = new StackPanel();
+        var head = new StackPanel { Orientation = Orientation.Horizontal };
+        head.Children.Add(T("What you get with MAX", 18, (Brush)FindResource("Text"), true));
+        var badge = new Border
+        {
+            Background = new LinearGradientBrush(Color.FromRgb(0x8B, 0x5C, 0xF6), Color.FromRgb(0x5B, 0x21, 0xB6), new Point(0, 0), new Point(1, 1)),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(10, 3, 10, 4),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+            Child = new TextBlock { Text = "MAX", FontSize = 11, FontWeight = FontWeights.Bold, Foreground = Brushes.White }
+        };
+        head.Children.Add(badge);
+        host.Children.Add(head);
+
+        host.Children.Add(MaxPerkRow("Server Hopper", "Browse live servers of any game and jump into the exact one you want."));
+        host.Children.Add(MaxPerkRow("Recently played + playtime", "Your last 8 games with total time played, right above the grid."));
+        host.Children.Add(MaxPerkRow("Quick launch hotkey (Alt+R)", "Instant game search from anywhere — type, Enter, you are in."));
+        host.Children.Add(MaxPerkRow("Auto Discord presence", "Rich Presence switches to your live Roblox game automatically."));
+        host.Children.Add(MaxPerkRow("Exclusive MAX accents", "Nebula, Magenta and Toxic — colors no free plan can pick."));
+        host.Children.Add(MaxPerkRow("MAX identity", "Purple branding, app icon and tray badge — your plan is visible everywhere."));
+        host.Children.Add(MaxPerkRow("Everything in Pro", "Best-server join, deep ping scan, game profiles, emote wheel and more."));
+
+        host.Children.Add(T("More coming soon: texture packs, cloud backups and game auto-tuning.", 12, (Brush)FindResource("Muted"), false, 14));
+        card.Child = host;
+        return card;
+    }
+
+    private Border BuildProScanCard()
+    {
+        var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(26), Margin = new Thickness(0, 18, 0, 0) };
+        var host = new StackPanel();
+
+        var head = new Grid();
+        head.ColumnDefinitions.Add(new ColumnDefinition());
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.Children.Add(T("PC optimization", 18, (Brush)FindResource("Text"), true));
+        var badge = new Border
+        {
+            Background = (Brush)FindResource("AccentGradient"),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(10, 3, 10, 4),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock { Text = "PRO", FontSize = 11, FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("AccentText") }
+        };
+        Grid.SetColumn(badge, 1); head.Children.Add(badge);
+        host.Children.Add(head);
+
+        host.Children.Add(T("Free scan shows an FPS forecast for your PC. Pro applies the optimal settings with one click.", 12.5, (Brush)FindResource("Muted"), false, 6));
+
+        var scanBtn = Btn("Scan my PC", true, 170);
+        scanBtn.Margin = new Thickness(0, 16, 0, 0);
+        host.Children.Add(scanBtn);
+
+        var result = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 18, 0, 0) };
+        host.Children.Add(result);
+
+        var status = T("", 12.5, (Brush)FindResource("Muted"), false, 10);
+        host.Children.Add(status);
+
+        scanBtn.Click += (_, _) =>
+        {
+            scanBtn.IsEnabled = false;
+            status.Text = Localization.T("Scanning your PC...");
+            result.Visibility = Visibility.Collapsed;
+            try
+            {
+                var scan = PcScan.Run();
+                FillScanResult(result, scan);
+                result.Visibility = Visibility.Visible;
+                status.Text = "";
+            }
+            catch
+            {
+                status.Text = Localization.T("Scan failed. Try again.");
+            }
+            scanBtn.IsEnabled = true;
+            scanBtn.Content = Localization.T("Scan again");
+        };
+
+        card.Child = host;
+        return card;
+    }
+
+    private void FillScanResult(StackPanel result, PcScanResult scan)
+    {
+        result.Children.Clear();
+
+        var hw = new StackPanel();
+        hw.Children.Add(T("Your hardware", 13, (Brush)FindResource("Accent"), true));
+        hw.Children.Add(T($"CPU  ·  {scan.Cpu}  ·  {scan.Threads} {Localization.T("threads")}", 12.5, (Brush)FindResource("Text"), false, 6));
+        hw.Children.Add(T($"GPU  ·  {scan.Gpu}", 12.5, (Brush)FindResource("Text"), false, 3));
+        hw.Children.Add(T(scan.RamGb > 0 ? $"RAM  ·  {scan.RamGb.ToString("0.#", CultureInfo.InvariantCulture)} GB" : "RAM  ·  —", 12.5, (Brush)FindResource("Text"), false, 3));
+        result.Children.Add(hw);
+
+        var forecast = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
+        forecast.Children.Add(T("Estimated FPS gain with Pro", 13, (Brush)FindResource("Accent"), true));
+        forecast.Children.Add(new TextBlock { Text = $"+{scan.FpsFrom}–{scan.FpsTo} FPS", FontSize = 34, FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("TitleGradient"), Margin = new Thickness(0, 4, 0, 0) });
+        forecast.Children.Add(T("Estimate — the real gain depends on the game.", 11.5, (Brush)FindResource("Muted"), false, 2));
+        result.Children.Add(forecast);
+
+        var apply = new Button
+        {
+            Content = HasPro ? (object)Localization.T("Apply optimization") : $"🔒  {Localization.T("Apply optimization")}",
+            Style = (Style)FindResource(HasPro ? "AccentPillButton" : "PillButton"),
+            Width = 250,
+            Height = 46,
+            Margin = new Thickness(0, 16, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        apply.Click += async (_, _) => await TryApplyOptimizationAsync(apply);
+        result.Children.Add(apply);
+    }
+
+    private async Task<bool> EnsureProAsync()
+    {
+        // Server-verified entitlement check (Pro or MAX) — a locally edited
+        // config cannot bypass this.
+        var check = await ProLicense.CheckAsync();
+        if (!check.Ok)
+        {
+            MessageBox.Show(Localization.T("Could not verify Pro (no connection)."), "Naxi Pro", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+        if (!check.Pro && !check.Max)
+        {
+            _config.IsPro = false;
+            _config.IsMax = false;
+            RobloxLauncher.SaveConfig(_config);
+            RefreshProPage();
+            ShowProInviteDialog();
+            return false;
+        }
+        if (_config.IsPro != check.Pro || _config.IsMax != check.Max)
+        {
+            _config.IsPro = check.Pro;
+            _config.IsMax = check.Max;
+            RobloxLauncher.SaveConfig(_config);
+            RefreshProPage();
+        }
+        return true;
+    }
+
+    private async Task TryApplyOptimizationAsync(Button apply)
+    {
+        apply.IsEnabled = false;
+        if (!await EnsureProAsync()) { apply.IsEnabled = true; return; }
+        _config.FpsUnlock = true;
+        _config.FpsLimit = 999;
+        _config.NoShadows = true;
+        _config.PerfMode = true;
+        _config.NoPostFx = true;
+        _config.NoTelemetry = true;
+        _config.FutureLighting = false;
+        RobloxLauncher.SaveConfig(_config);
+        _fastFlags = BuildFastFlags();
+        var applied = RobloxLauncher.ApplyFlags(_config);
+        MessageBox.Show(Localization.T("Optimization applied!") + "\n" + applied, "Naxi Pro", MessageBoxButton.OK, MessageBoxImage.Information);
+        RefreshProPage();
+    }
+
+    private Border BuildProPerksCard()
+    {
+        var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(26), Margin = new Thickness(0, 18, 0, 0) };
+        var host = new StackPanel();
+        host.Children.Add(T("What you get with Pro", 18, (Brush)FindResource("Text"), true));
+
+        host.Children.Add(ProPerkRow("Best-server join", "Joins one of the least loaded servers instead of a random match."));
+        host.Children.Add(ProPerkRow("Deep ping scan", "Measures ~100 network nodes to find your lowest possible ping."));
+        host.Children.Add(ProPerkRow("Per-game profiles", "Each game gets its own flag preset, applied on every launch."));
+        host.Children.Add(ProPerkRow("Emote wheel studio", "Replace Roblox emote wheel textures with your own PNG images."));
+        host.Children.Add(ProPerkRow("Personal PC optimization preset", "One-click optimal settings based on your hardware."));
+        host.Children.Add(ProPerkRow("All future Pro features included", "New Pro perks arrive at no extra cost."));
+        host.Children.Add(ProPerkRow("Server-verified activation", "Pro status is checked with the server, so it cannot be faked."));
+
+        host.Children.Add(T("More coming soon: launcher themes, texture packs and game auto-tuning.", 12, (Brush)FindResource("Muted"), false, 14));
+        card.Child = host;
+        return card;
+    }
+
+    private FrameworkElement ProPerkRow(string title, string desc)
+    {
+        var locked = !HasPro;
+        var g = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition());
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var icon = new Border
+        {
+            Width = 40,
+            Height = 40,
+            CornerRadius = new CornerRadius(13),
+            Background = locked ? new SolidColorBrush(Color.FromRgb(24, 30, 40)) : (Brush)FindResource("AccentGradient"),
+            Child = new TextBlock { Text = locked ? "🔒" : "✓", FontSize = 17, Foreground = locked ? (Brush)FindResource("Muted") : (Brush)FindResource("AccentText"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        };
+        Grid.SetColumn(icon, 0); g.Children.Add(icon);
+        var t = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 10, 0) };
+        t.Children.Add(T(title, 14.5, (Brush)FindResource("Text"), true));
+        t.Children.Add(T(desc, 12, (Brush)FindResource("Muted"), false, 2));
+        Grid.SetColumn(t, 1); g.Children.Add(t);
+        var tag = new TextBlock { Text = locked ? "🔒" : "✓", FontSize = 15, Foreground = locked ? (Brush)FindResource("Muted") : (Brush)FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(tag, 2); g.Children.Add(tag);
+        return g;
+    }
+
+    // allowWhenActive: Pro users may open the dialog too — to upgrade to MAX with a code.
+    private void ShowProInviteDialog(bool allowWhenActive = false)
+    {
+        if (!allowWhenActive && (_config.IsPro || _config.IsMax)) return;
+        var dialog = new Window
+        {
+            Title = "Naxi Pro",
+            Owner = this,
+            Width = 560,
+            Height = 560,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var shell = new Border
+        {
+            CornerRadius = new CornerRadius(22),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(50, 66, 84)),
+            BorderThickness = new Thickness(1),
+            ClipToBounds = true,
+            Background = new LinearGradientBrush(Color.FromRgb(10, 18, 31), Color.FromRgb(13, 25, 42), new Point(0, 0), new Point(1, 1))
+        };
+        var root = new Grid();
+        var glow = new Ellipse { Width = 460, Height = 460, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, -250, -180, 0), IsHitTestVisible = false };
+        glow.Fill = new RadialGradientBrush(Color.FromArgb(68, 124, 183, 224), Color.FromArgb(0, 124, 183, 224));
+        root.Children.Add(glow);
+
+        var close = new Button
+        {
+            Content = "✕",
+            FontSize = 23,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(18)
+        };
+        close.Style = (Style)FindResource("CloseCrossButton");
+        close.Click += (_, _) => dialog.Close();
+        root.Children.Add(close);
+
+        var content = new StackPanel { Width = 430, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 20, 0, 0) };
+        content.Children.Add(new Border
+        {
+            Width = 54,
+            Height = 54,
+            CornerRadius = new CornerRadius(18),
+            Background = (Brush)FindResource("AccentGradient"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Child = new TextBlock { Text = "✦", FontSize = 26, Foreground = (Brush)FindResource("AccentText"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+        });
+        var heading = T("Naxi Pro or MAX is invite only", 27, (Brush)FindResource("Text"), true, 18);
+        heading.TextAlignment = TextAlignment.Center;
+        content.Children.Add(heading);
+        var subtitle = T("If you have an invite code, enter it below.", 15, (Brush)FindResource("Muted"), false, 8);
+        subtitle.TextAlignment = TextAlignment.Center;
+        content.Children.Add(subtitle);
+        var codeLabel = T("Invite code", 12, (Brush)FindResource("Accent"), true, 38);
+        codeLabel.TextAlignment = TextAlignment.Center;
+        content.Children.Add(codeLabel);
+
+        var boxes = new List<TextBox>();
+        var busy = false;
+        var status = new TextBlock
+        {
+            FontSize = 13,
+            Foreground = (Brush)FindResource("Muted"),
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 16, 0, 0),
+            MinHeight = 20
+        };
+        var activate = Btn("Activate", true, 180);
+        activate.Margin = new Thickness(0, 18, 0, 0);
+        activate.HorizontalAlignment = HorizontalAlignment.Center;
+
+        async Task TryRedeem()
+        {
+            if (busy) return;
+            var code = string.Concat(boxes.Select(b => b.Text.Trim()));
+            if (code.Length != 6)
+            {
+                status.Foreground = new SolidColorBrush(Color.FromRgb(232, 120, 120));
+                status.Text = Localization.T("Enter the 6-character invite code.");
+                return;
+            }
+
+            busy = true;
+            foreach (var b in boxes) b.IsEnabled = false;
+            activate.IsEnabled = false;
+            status.Foreground = (Brush)FindResource("Muted");
+            status.Text = Localization.T("Checking code...");
+
+            var result = await ProLicense.RedeemAsync(code);
+            if (result.Ok && (result.Pro || result.Max))
+            {
+                _config.IsPro = result.Pro;
+                _config.IsMax = result.Max;
+                _config.ProExpiresAt = result.ExpiresAt;
+                if (result.Max) _config.MaxExpiresAt = result.ExpiresAt;
+                RobloxLauncher.SaveConfig(_config);
+                dialog.Close();
+                RefreshProPage();
+                return;
+            }
+
+            busy = false;
+            foreach (var b in boxes) b.IsEnabled = true;
+            activate.IsEnabled = true;
+            status.Foreground = new SolidColorBrush(Color.FromRgb(232, 120, 120));
+            status.Text = Localization.T(result.Error switch
+            {
+                "used" => "This code was already used.",
+                "expired" => "This code has expired.",
+                "network" => "Could not reach the server.",
+                _ => "Invalid invite code."
+            });
+            boxes[0].Focus();
+            boxes[0].SelectAll();
+        }
+
+        void FillCode(string raw)
+        {
+            var chars = raw.Where(char.IsLetterOrDigit).Take(6).Select(char.ToUpperInvariant).ToArray();
+            for (var i = 0; i < boxes.Count; i++)
+                boxes[i].Text = i < chars.Length ? chars[i].ToString() : "";
+            if (chars.Length == 6) _ = TryRedeem();
+            else boxes[Math.Clamp(chars.Length, 0, boxes.Count - 1)].Focus();
+        }
+
+        var codeRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
+        for (var i = 0; i < 6; i++)
+        {
+            var index = i;
+            var box = new TextBox
+            {
+                Style = (Style)FindResource("InputBox"),
+                Width = 52,
+                Height = 66,
+                MaxLength = 1,
+                FontSize = 24,
+                FontWeight = FontWeights.SemiBold,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                Padding = new Thickness(0),
+                Margin = new Thickness(i == 0 ? 0 : 8, 0, 0, 0),
+                CharacterCasing = System.Windows.Controls.CharacterCasing.Upper
+            };
+            box.PreviewTextInput += (_, e) => e.Handled = e.Text.Any(c => !char.IsLetterOrDigit(c));
+            System.Windows.DataObject.AddPastingHandler(box, (_, e) =>
+            {
+                if (!e.DataObject.GetDataPresent(System.Windows.DataFormats.UnicodeText)) return;
+                e.CancelCommand();
+                FillCode(e.DataObject.GetData(System.Windows.DataFormats.UnicodeText) as string ?? "");
+            });
+            box.TextChanged += (_, _) =>
+            {
+                if (box.Text.Length == 1 && index < boxes.Count - 1)
+                    boxes[index + 1].Focus();
+                if (boxes.Count == 6 && boxes.All(b => b.Text.Length == 1))
+                    _ = TryRedeem();
+            };
+            box.PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Back && box.Text.Length == 0 && index > 0)
+                {
+                    boxes[index - 1].Focus();
+                    boxes[index - 1].SelectAll();
+                }
+            };
+            boxes.Add(box);
+            codeRow.Children.Add(box);
+        }
+        content.Children.Add(codeRow);
+        content.Children.Add(status);
+        activate.Click += (_, _) => _ = TryRedeem();
+        content.Children.Add(activate);
+        root.Children.Add(content);
+        shell.Child = root;
+        dialog.Content = shell;
+        dialog.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) { e.Handled = true; _ = TryRedeem(); }
+            else if (e.Key == Key.V && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                e.Handled = true;
+                FillCode(System.Windows.Clipboard.GetText());
+            }
+        };
+        dialog.Loaded += (_, _) => boxes[0].Focus();
+        dialog.ShowDialog();
     }
 
     private void SetAutostart(bool enable)
@@ -2961,7 +4742,7 @@ public partial class MainWindow : Window
 
         var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(18, 0, 0, 0) };
         info.Children.Add(T("Foxzy", 22, (Brush)FindResource("Text"), true));
-        info.Children.Add(T("Создатель Naxi Bootstrap", 13.5, (Brush)FindResource("Muted"), false, 4));
+        info.Children.Add(T("Creator of Naxi Bootstrap", 13.5, (Brush)FindResource("Muted"), false, 4));
         row.Children.Add(info);
         card.Child = row;
         host.Children.Add(card);
@@ -3011,6 +4792,7 @@ public partial class MainWindow : Window
 
     private Grid BuildAccounts()
     {
+        _accountsList = new StackPanel();
         var g = new Grid();
         g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -3331,7 +5113,7 @@ public partial class MainWindow : Window
             if (isNew)
             {
                 var newTag = new Border { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 14, 14, 0), Background = new SolidColorBrush(Color.FromRgb(94, 156, 200)), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 4, 10, 4) };
-                newTag.Child = new TextBlock { Text = "NEW", FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(10, 20, 32)), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                newTag.Child = new TextBlock { Text = Localization.T("NEW"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(10, 20, 32)), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
                 imageHost.Children.Add(newTag);
             }
             imageWrapper.Child = imageHost;
@@ -3369,11 +5151,11 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(n.ImageUrl)) _ = LoadNewsImage(im, n.ImageUrl);
         var grad = new Border { VerticalAlignment = VerticalAlignment.Bottom, Height = 160, Background = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1), GradientStops = { new GradientStop(Color.FromArgb(0, 0, 0, 0), 0), new GradientStop(Color.FromArgb(240, 16, 19, 28), 1) } } };
         imageHost.Children.Add(grad);
-        var closeBtn = new Border { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 14, 14, 0), Background = new SolidColorBrush(Color.FromArgb(160, 24, 28, 38)), CornerRadius = new CornerRadius(16), Width = 32, Height = 32, Cursor = System.Windows.Input.Cursors.Hand };
-        closeBtn.Child = new TextBlock { Text = "✕", FontSize = 14, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var closeBtn = new Border { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 10, 10, 0), Background = Brushes.Transparent, Width = 38, Height = 38, Cursor = System.Windows.Input.Cursors.Hand };
+        closeBtn.Child = new TextBlock { Text = "✕", FontSize = 20, FontWeight = FontWeights.Light, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Colors.Black, BlurRadius = 10, ShadowDepth = 0, Opacity = 0.65 } };
         closeBtn.MouseLeftButtonDown += (_, _) => HideNewsDetail();
         imageHost.Children.Add(closeBtn);
-        try { if (DateTime.TryParse(n.Date, out var nd) && (DateTime.Now - nd).TotalDays < 7) { var nt = new Border { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(14, 14, 0, 0), Background = new SolidColorBrush(Color.FromRgb(94, 156, 200)), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 4, 10, 4) }; nt.Child = new TextBlock { Text = "NEW", FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(10, 20, 32)) }; imageHost.Children.Add(nt); } } catch { }
+        try { if (DateTime.TryParse(n.Date, out var nd) && (DateTime.Now - nd).TotalDays < 7) { var nt = new Border { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(14, 14, 0, 0), Background = new SolidColorBrush(Color.FromRgb(94, 156, 200)), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 4, 10, 4) }; nt.Child = new TextBlock { Text = Localization.T("NEW"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(10, 20, 32)) }; imageHost.Children.Add(nt); } } catch { }
         imageWrapper.Child = imageHost;
         var titlePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(24, 0, 24, 20) };
         var titleText = string.IsNullOrWhiteSpace(n.Title) ? n.Text.Split('\n').FirstOrDefault()?.Trim() ?? "Update" : n.Title!;
@@ -3416,7 +5198,31 @@ public partial class MainWindow : Window
     {
         try
         {
-            var bytes = await Http.GetByteArrayAsync(url);
+            // 1) Honor direct image links (github raw, imgur, cdn.*, *.png/jpg/webp/gif...)
+            // 2) Discord links: extract the actual attachment (cdn.discordapp.com / media.discordapp.net)
+            //    if present; otherwise try /latest for the channel's latest attachment.
+            //    When Discord blocks it (plain HTML, no token), we show a clean placeholder
+            //    instead of a broken blank image.
+            string resolved = url;
+            if (url.IndexOf("discord.com/channels/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                url.IndexOf("discordapp.com/channels/", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                // Discord message link: only a real attachment/cdn URL can be displayed
+                // without a user token. If none is present, we'll show a placeholder.
+                var cdn = TryExtractDiscordAttachment(url);
+                if (!string.IsNullOrEmpty(cdn))
+                    resolved = cdn;
+            }
+
+            var bytes = await Http.GetByteArrayAsync(resolved);
+            // If Discord returned HTML (not an image), fall back to placeholder.
+            if (bytes.Length > 2 &&
+                bytes[0] == '<' /* '<' */ && (bytes[1] == '!' || bytes[1] == 'h')) // '<!' or '<h'
+            {
+                ApplyNewsPlaceholder(img, url);
+                return;
+            }
+
             var bmp = new BitmapImage();
             bmp.BeginInit();
             bmp.CacheOption = BitmapCacheOption.OnLoad;
@@ -3424,7 +5230,1899 @@ public partial class MainWindow : Window
             bmp.EndInit();
             bmp.Freeze();
             img.Source = bmp;
-        } catch { }
+        }
+        catch
+        {
+            ApplyNewsPlaceholder(img, url);
+        }
+    }
+
+    /// <summary>Extract a cdn.discordapp.com/media.discordapp.net attachment URL from a Discord page/link if one exists.</summary>
+    private static string? TryExtractDiscordAttachment(string url)
+    {
+        // Discord message links can't be turned into image URLs without a user token.
+        // We only handle direct cdn.discordapp.com / media.discordapp.net attachments,
+        // which the author should put into news.json. Anything else → placeholder.
+        if (url.IndexOf("cdn.discordapp.com/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            url.IndexOf("media.discordapp.net/", StringComparison.OrdinalIgnoreCase) >= 0)
+            return url;
+        return null;
+    }
+
+    private static void ApplyNewsPlaceholder(Image img, string url)
+    {
+        // A subtle frosted-gradient so the card never looks broken (Discord links are
+        // often token-gated; a clear placeholder looks better than a black void).
+        try
+        {
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            using (var ms = new MemoryStream())
+            {
+                var b = new System.Drawing.Bitmap(2, 2);
+                using (var g = System.Drawing.Graphics.FromImage(b))
+                {
+                    g.Clear(System.Drawing.Color.FromArgb(0x8C, 0x12, 0x17, 0x24)); // dark navy glass
+                }
+                b.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                ms.Position = 0;
+                bmp.StreamSource = ms;
+                bmp.EndInit();
+            }
+            bmp.Freeze();
+            img.Source = bmp;
+        }
+        catch { }
+    }
+
+    // ================= Game Hub =================
+
+    private Grid BuildGameHub()
+    {
+        var g = new Grid();
+        g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        g.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        g.Margin = new Thickness(72, 22, 40, 0);
+
+        // title + refresh
+        var title = new StackPanel { Orientation = Orientation.Horizontal };
+        title.Children.Add(T("Game Hub", 26, (Brush)FindResource("Text"), true));
+        var refreshBtn = new Button
+        {
+            Style = (Style)FindResource("PillButton"),
+            Content = "\uE72C",
+            FontFamily = NavIconFont,
+            FontSize = 14,
+            Width = 42,
+            Height = 34,
+            Padding = new Thickness(0),
+            Margin = new Thickness(14, 2, 0, 0)
+        };
+        ToolTipService.SetToolTip(refreshBtn, Localization.T("Refresh"));
+        refreshBtn.RenderTransformOrigin = new Point(0.5, 0.5);
+        refreshBtn.RenderTransform = new ScaleTransform(1, 1);
+        refreshBtn.MouseEnter += (_, _) => { AnimScaleSpring(refreshBtn, 1.12, 200); refreshBtn.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0.85, TimeSpan.FromMilliseconds(120))); };
+        refreshBtn.MouseLeave += (_, _) => { AnimScaleSpring(refreshBtn, 1, 220); refreshBtn.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.85, 1, TimeSpan.FromMilliseconds(140))); };
+        refreshBtn.PreviewMouseLeftButtonDown += (_, _) => AnimScale(refreshBtn, 0.95, 90);
+        refreshBtn.PreviewMouseLeftButtonUp += (_, _) => AnimScaleSpring(refreshBtn, 1.12, 160);
+        refreshBtn.Click += (_, _) => { _ghLastRefresh = DateTime.MinValue; if (_ghSearch != null) _ghSearch.Text = ""; RefreshGameHubLive(force: true); };
+        title.Children.Add(refreshBtn);
+
+        // random game picker
+        var randomBtn = new Button
+        {
+            Style = (Style)FindResource("PillButton"),
+            Content = "🎲",
+            FontSize = 13,
+            Width = 42,
+            Height = 34,
+            Padding = new Thickness(0),
+            Margin = new Thickness(8, 2, 0, 0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(1, 1)
+        };
+        ToolTipService.SetToolTip(randomBtn, Localization.T("Random game"));
+        randomBtn.MouseEnter += (_, _) => AnimScaleSpring(randomBtn, 1.12, 200);
+        randomBtn.MouseLeave += (_, _) => AnimScaleSpring(randomBtn, 1, 220);
+        randomBtn.PreviewMouseLeftButtonDown += (_, _) => AnimScale(randomBtn, 0.95, 90);
+        randomBtn.PreviewMouseLeftButtonUp += (_, _) => AnimScaleSpring(randomBtn, 1.12, 160);
+        randomBtn.Click += (_, _) => PickRandomGame();
+        title.Children.Add(randomBtn);
+
+        // sort cycler (Players → Visits → Name)
+        _ghSortBtn = new Button
+        {
+            Style = (Style)FindResource("PillButton"),
+            FontSize = 12,
+            Height = 34,
+            Padding = new Thickness(14, 0, 14, 0),
+            Margin = new Thickness(8, 2, 0, 0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(1, 1)
+        };
+        UpdateSortBtnLabel();
+        _ghSortBtn.MouseEnter += (_, _) => AnimScaleSpring(_ghSortBtn, 1.06, 200);
+        _ghSortBtn.MouseLeave += (_, _) => AnimScaleSpring(_ghSortBtn, 1, 220);
+        _ghSortBtn.Click += (_, _) => CycleGameHubSort();
+        title.Children.Add(_ghSortBtn);
+
+        // genre cycler (All → each genre → All)
+        _ghGenreBtn = new Button
+        {
+            Style = (Style)FindResource("PillButton"),
+            FontSize = 12,
+            Height = 34,
+            Padding = new Thickness(14, 0, 14, 0),
+            Margin = new Thickness(8, 2, 0, 0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(1, 1)
+        };
+        UpdateGenreBtnLabel();
+        _ghGenreBtn.MouseEnter += (_, _) => AnimScaleSpring(_ghGenreBtn, 1.06, 200);
+        _ghGenreBtn.MouseLeave += (_, _) => AnimScaleSpring(_ghGenreBtn, 1, 220);
+        _ghGenreBtn.Click += (_, _) => CycleGameHubGenre();
+        title.Children.Add(_ghGenreBtn);
+        Grid.SetRow(title, 0);
+        g.Children.Add(title);
+
+        // status + ping strip
+        var strip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
+
+        var statusCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(16, 12, 18, 12), Width = 400, VerticalAlignment = VerticalAlignment.Top };
+        var statusPanel = new StackPanel { Orientation = Orientation.Horizontal };
+        _ghStatusDot = new Ellipse { Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 6, 10, 0), Fill = new SolidColorBrush(Color.FromRgb(0x8A, 0x90, 0x99)) };
+        statusPanel.Children.Add(_ghStatusDot);
+        var statusTexts = new StackPanel();
+        statusTexts.Children.Add(T("Roblox Status", 13.5, (Brush)FindResource("Text"), true));
+        _ghStatusText = new TextBlock { Text = Localization.T("Checking..."), FontSize = 12, Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+        statusTexts.Children.Add(_ghStatusText);
+        statusPanel.Children.Add(statusTexts);
+        statusCard.Child = statusPanel;
+        strip.Children.Add(statusCard);
+
+        var pingCard = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(16, 12, 16, 12), Width = 240, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Top };
+        var pingPanel = new StackPanel();
+        var pingTitle = new StackPanel { Orientation = Orientation.Horizontal };
+        pingTitle.Children.Add(T("Ping to Roblox", 13.5, (Brush)FindResource("Text"), true));
+        if (HasPro) pingTitle.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x26, 0x46, 0xD0, 0x7C)),
+            CornerRadius = new CornerRadius(5),
+            Margin = new Thickness(8, 1, 0, 0),
+            Padding = new Thickness(7, 1, 7, 2),
+            VerticalAlignment = VerticalAlignment.Top,
+            Child = new TextBlock { Text = _config.IsMax ? "MAX" : "PRO", FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(0x46, 0xD0, 0x7C)) }
+        });
+        pingPanel.Children.Add(pingTitle);
+        _ghPingValue = new TextBlock { Text = Localization.T("Checking..."), FontSize = 24, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 4, 0, 0), Foreground = (Brush)FindResource("Muted") };
+        pingPanel.Children.Add(_ghPingValue);
+        _ghPingSub = new TextBlock { Text = Localization.T("Ping to Roblox servers"), FontSize = 11, Foreground = (Brush)FindResource("Muted") };
+        pingPanel.Children.Add(_ghPingSub);
+        pingCard.Child = pingPanel;
+        strip.Children.Add(pingCard);
+
+        Grid.SetRow(strip, 1);
+        g.Children.Add(strip);
+
+        // search row
+        var searchWrap = new Border { Style = (Style)FindResource("Card"), CornerRadius = new CornerRadius(12), Width = 440, Margin = new Thickness(0, 16, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
+        var searchGrid = new Grid();
+        _ghSearch = new TextBox { Style = (Style)FindResource("InputBox"), Background = Brushes.Transparent, BorderThickness = new Thickness(0), FontSize = 13, Margin = new Thickness(0, 0, 0, 1) };
+        _ghSearch.KeyDown += GhSearch_KeyDown;
+        _ghSearchHint = new TextBlock { Text = Localization.T("Search games or paste a Roblox link..."), FontSize = 13, Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(13, 0, 0, 0), IsHitTestVisible = false };
+        _ghSearch.TextChanged += (_, _) => { if (_ghSearchHint != null) _ghSearchHint.Visibility = _ghSearch!.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; };
+        searchGrid.Children.Add(_ghSearch);
+        searchGrid.Children.Add(_ghSearchHint);
+        searchWrap.Child = searchGrid;
+        searchWrap.RenderTransformOrigin = new Point(0.5, 0.5);
+        searchWrap.RenderTransform = new ScaleTransform(1, 1);
+        searchWrap.MouseEnter += (_, _) => { AnimScale(searchWrap, 1.02, 140); searchWrap.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0.88, TimeSpan.FromMilliseconds(120))); };
+        searchWrap.MouseLeave += (_, _) => { AnimScale(searchWrap, 1, 160); searchWrap.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0.88, 1, TimeSpan.FromMilliseconds(140))); };
+        Grid.SetRow(searchWrap, 2);
+        g.Children.Add(searchWrap);
+
+        // folders row — chip bar of "All games" + user folders (right-click a folder chip to rename / delete)
+        var folderRow = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        var folderTitle = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        folderTitle.Children.Add(T("Folders", 12, (Brush)FindResource("Muted"), true));
+        var newFolderBtn = new Button { Style = (Style)FindResource("PillButton"), Content = "+ " + Localization.T("New folder"), FontSize = 11.5, Height = 27, Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Cursor = System.Windows.Input.Cursors.Hand, RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = new ScaleTransform(1, 1) };
+        newFolderBtn.MouseEnter += (_, _) => AnimScale(newFolderBtn, 1.08, 140);
+        newFolderBtn.MouseLeave += (_, _) => AnimScale(newFolderBtn, 1, 160);
+        newFolderBtn.Click += (_, _) => ShowNewFolderDialog();
+        folderTitle.Children.Add(newFolderBtn);
+        folderRow.Children.Add(folderTitle);
+        var folderScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _ghFolderBar, ClipToBounds = true, Margin = new Thickness(0, 10, 0, 0) };
+        folderRow.Children.Add(folderScroll);
+        Grid.SetRow(folderRow, 3);
+        g.Children.Add(folderRow);
+
+        // games grid
+        _gamesList.Margin = new Thickness(0, 14, 0, 0);
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _gamesList, ClipToBounds = true, Padding = new Thickness(0, 0, 12, 0) };
+        SmoothScroll.SetEnabled(scroll, true);
+        Grid.SetRow(scroll, 4);
+        g.Children.Add(scroll);
+        _gamesList.Children.Add(T("Loading games...", 13, (Brush)FindResource("Muted"), false, 12));
+
+        _ = LoadGameHubAsync();
+        _ = RefreshGameHubStatusAsync();
+        _ = RefreshGameHubPingAsync();
+
+        // live refresh: online counts/status/ping every 60 s while the tab is open
+        if (_ghLiveTimer != null) _ghLiveTimer.Stop();
+        _ghLiveTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+        _ghLiveTimer.Tick += (_, _) => { if (ReferenceEquals(PageHost.Content, _games)) RefreshGameHubLive(); };
+        _ghLiveTimer.Start();
+        return g;
+    }
+
+    private void RefreshGameHubLive(bool force = false)
+    {
+        if (!force && (DateTime.UtcNow - _ghLastRefresh).TotalSeconds < 45) return;
+        _ghLastRefresh = DateTime.UtcNow;
+        _ = LoadGameHubAsync();
+        _ = RefreshGameHubStatusAsync();
+        _ = RefreshGameHubPingAsync();
+    }
+
+    private async Task LoadGameHubAsync()
+    {
+        int seq = ++_ghLoadSeq;
+        try
+        {
+            var placeIds = (await GameHubService.GetCuratedPlaceIdsAsync())
+                .OrderByDescending(id => _config.FavoritePlaceIds.Contains(id)).ToList();
+            var games = await GameHubService.GetGamesAsync(placeIds);
+            foreach (var gm in games) gm.Favorite = _config.FavoritePlaceIds.Contains(gm.PlaceId);
+            if (seq != _ghLoadSeq) return;
+            _ghAllGames = games;
+            RebuildFolderBar();
+            ApplyHubView();
+        }
+        catch
+        {
+            if (seq == _ghLoadSeq) RenderGameCards(new List<HubGame>(), searchMode: false, failed: true);
+        }
+    }
+
+    private void RenderGameCards(List<HubGame> games, bool searchMode, bool failed = false, string? emptyText = null)
+    {
+        _gamesList.Children.Clear();
+        if (failed) { _gamesList.Children.Add(T("Could not load games. Check internet.", 13, (Brush)FindResource("Muted"), false, 12)); return; }
+        if (games.Count == 0) { _gamesList.Children.Add(T(searchMode ? "No games found" : (emptyText ?? "Loading games..."), 13, (Brush)FindResource("Muted"), false, 12)); return; }
+
+        var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
+        // the incoming list is already ordered (favorites first, then the active
+        // sort); re-sorting here would destroy the PickRandomGame float-to-top.
+        int cardIndex = 0;
+        foreach (var game in games)
+            wrap.Children.Add(BuildGameCard(game, cardIndex++));
+        _gamesList.Children.Add(wrap);
+    }
+
+    private Border BuildGameCard(HubGame game, int index = 0)
+    {
+        var accent = (Brush)FindResource("Accent");
+        var cardBorder = (Brush)FindResource("CardBorder");
+        var surface = (Brush)FindResource("Surface");
+        var surface2 = (Brush)FindResource("Surface2");
+
+        var scaleXform = new ScaleTransform(1, 1);
+        var liftXform = new TranslateTransform(0, 0);
+
+        var card = new Border
+        {
+            Style = (Style)FindResource("Card"),
+            Width = 168,
+            Height = 200,
+            Margin = new Thickness(0, 0, 14, 16),
+            CornerRadius = new CornerRadius(14),
+            ClipToBounds = true,
+            Background = surface,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new TransformGroup { Children = { scaleXform, liftXform } }
+        };
+
+        // staggered spring pop-in
+        {
+            int delay = Math.Min(index * 24, 420);
+            card.Opacity = 0;
+            card.IsHitTestVisible = false;
+            var popSx = new DoubleAnimation(0.9, 1, TimeSpan.FromMilliseconds(360)) { BeginTime = TimeSpan.FromMilliseconds(delay), EasingFunction = BackOut(0.55) };
+            var popSy = new DoubleAnimation(0.9, 1, TimeSpan.FromMilliseconds(360)) { BeginTime = TimeSpan.FromMilliseconds(delay), EasingFunction = BackOut(0.55) };
+            var popY = new DoubleAnimation(14, 0, TimeSpan.FromMilliseconds(360)) { BeginTime = TimeSpan.FromMilliseconds(delay), EasingFunction = EaseOut() };
+            var popO = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(280)) { BeginTime = TimeSpan.FromMilliseconds(delay), EasingFunction = EaseOut() };
+            popSx.Completed += (_, _) => card.IsHitTestVisible = true;
+            scaleXform.BeginAnimation(ScaleTransform.ScaleXProperty, popSx);
+            scaleXform.BeginAnimation(ScaleTransform.ScaleYProperty, popSy);
+            liftXform.BeginAnimation(TranslateTransform.YProperty, popY);
+            card.BeginAnimation(UIElement.OpacityProperty, popO);
+        }
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(112) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var imgWrap = new Border { CornerRadius = new CornerRadius(13, 13, 0, 0), ClipToBounds = true, Background = (Brush)FindResource("InputBg") };
+        var img = new Image { Stretch = Stretch.UniformToFill, Opacity = 0 };
+        imgWrap.Child = img;
+        Grid.SetRow(imgWrap, 0);
+        grid.Children.Add(imgWrap);
+        _ = LoadGameIconAsync(game, img);
+
+        // favorite star (top-right overlay on the image)
+        var star = new TextBlock
+        {
+            Text = game.Favorite ? "\uE735" : "\uE734",
+            FontFamily = NavIconFont,
+            FontSize = 14,
+            Foreground = game.Favorite
+                ? new SolidColorBrush(Color.FromRgb(0xE8, 0xC8, 0x60))
+                : new SolidColorBrush(Color.FromArgb(225, 255, 255, 255)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var starGrid = new Grid();
+        starGrid.Children.Add(star);
+        var starHost = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0)),
+            CornerRadius = new CornerRadius(9),
+            Width = 28, Height = 28,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 7, 7, 0),
+            Child = starGrid,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(1, 1)
+        };
+        starHost.MouseLeftButtonUp += (_, e) => { e.Handled = true; ToggleGameFavorite(game, star, starHost); };
+        starHost.MouseEnter += (_, _) => AnimScaleSpring(starHost, 1.2, 220);
+        starHost.MouseLeave += (_, _) => AnimScaleSpring(starHost, 1, 240);
+        Grid.SetRow(starHost,0);
+        grid.Children.Add(starHost);
+
+        // add-to-folder floating glass button (springs up from the corner on card hover)
+        var accentColor = SolidColor(accent, Color.FromRgb(0x7C, 0xB7, 0xE0));
+        var s2Color = SolidColor(surface2, Color.FromRgb(0x19, 0x1D, 0x25));
+        var fbScale = new ScaleTransform(0.6, 0.6);
+        var fbLift = new TranslateTransform(0, 8);
+        var fbGlow = new System.Windows.Media.Effects.DropShadowEffect { Color = accentColor, BlurRadius = 14, ShadowDepth = 0, Opacity = 0 };
+        var folderBtn = new Border
+        {
+            Width = 30,
+            Height = 30,
+            CornerRadius = new CornerRadius(15),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(0.55, 1),
+                GradientStops =
+                {
+                    new GradientStop(LerpColor(s2Color, Colors.White, 0.24), 0),
+                    new GradientStop(LerpColor(s2Color, Colors.Black, 0.22), 1)
+                }
+            },
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, accentColor.R, accentColor.G, accentColor.B)),
+            Child = new Grid
+            {
+                Children =
+                {
+                    new System.Windows.Shapes.Ellipse
+                    {
+                        Stroke = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
+                        StrokeThickness = 1,
+                        Margin = new Thickness(2),
+                        IsHitTestVisible = false
+                    },
+                    new TextBlock
+                    {
+                        Text = "\uE8B7",
+                        FontFamily = NavIconFont,
+                        FontSize = 13,
+                        Foreground = accent,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
+            },
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 6, 8, 8),
+            Opacity = 0,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new TransformGroup { Children = { fbScale, fbLift } },
+            Effect = fbGlow,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            ToolTip = Localization.T("Add to folder")
+        };
+        folderBtn.MouseEnter += (_, _) => { AnimScaleSpring(folderBtn, 1.16, 240); GlowTo(fbGlow, 0.55, 18, 180); };
+        folderBtn.MouseLeave += (_, _) => { AnimScaleSpring(folderBtn, 1, 240); GlowTo(fbGlow, 0, 14, 220); };
+        folderBtn.PreviewMouseLeftButtonDown += (_, _) => AnimScaleSpring(folderBtn, 0.88, 110);
+        folderBtn.MouseLeftButtonUp += (_, e) => { e.Handled = true; AnimScaleSpring(folderBtn, 1.16, 160); ShowAddToFolderMenu(game, folderBtn); };
+        Grid.SetRow(folderBtn,1);
+        grid.Children.Add(folderBtn);
+        var info = new StackPanel { Margin = new Thickness(10, 8, 10, 0) };
+        var name = new TextBlock
+        {
+            Text = game.Name,
+            FontSize = 12.5,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("Text"),
+            TextWrapping = TextWrapping.Wrap,
+            MaxHeight = 34,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        ToolTipService.SetToolTip(name, game.Name + (game.Creator.Length > 0 ? " — " + game.Creator : ""));
+        info.Children.Add(name);
+
+        var onlineRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        var liveDot = new Ellipse { Width = 7, Height = 7, Fill = (Brush)FindResource("Green"), VerticalAlignment = VerticalAlignment.Center };
+        liveDot.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0.35, TimeSpan.FromMilliseconds(850)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = EaseOut() });
+        onlineRow.Children.Add(liveDot);
+        onlineRow.Children.Add(new TextBlock
+        {
+            Text = $" {FormatGameCount(game.Playing)} {Localization.T("playing")}",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x46, 0xD0, 0x7C)),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        info.Children.Add(onlineRow);
+
+        info.Children.Add(new TextBlock
+        {
+            Text = $"{FormatGameCount(game.Visits)} {Localization.T("visits")}",
+            FontSize = 10.5,
+            Foreground = (Brush)FindResource("Muted"),
+            Margin = new Thickness(0, 3, 0, 0)
+        });
+        Grid.SetRow(info, 1);
+        grid.Children.Add(info);
+
+        card.Child = grid;
+
+        // animatable colors + persistent glow → smooth color transitions, no effect swapping
+        var cardGlow = new System.Windows.Media.Effects.DropShadowEffect { Color = accentColor, BlurRadius = 0, ShadowDepth = 0, Opacity = 0 };
+        card.Effect = cardGlow;
+        var borderColor = SolidColor(cardBorder, Color.FromRgb(0x20, 0x25, 0x2E));
+        var surfaceColor = SolidColor(surface, Color.FromRgb(0x14, 0x17, 0x1E));
+        var surface2Color = SolidColor(surface2, Color.FromRgb(0x19, 0x1D, 0x25));
+        var borderBrushAnim = new SolidColorBrush(borderColor);
+        var bgBrushAnim = new SolidColorBrush(surfaceColor);
+        card.BorderBrush = borderBrushAnim;
+        card.Background = bgBrushAnim;
+        bool over = false;
+        card.MouseEnter += (_, _) =>
+        {
+            over = true;
+            borderBrushAnim.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(accentColor, TimeSpan.FromMilliseconds(220)) { EasingFunction = EaseOut() });
+            bgBrushAnim.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(surface2Color, TimeSpan.FromMilliseconds(220)) { EasingFunction = EaseOut() });
+            AnimScale(card, 1.045, 200);
+            liftXform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -4, TimeSpan.FromMilliseconds(200)) { EasingFunction = EaseOut() });
+            GlowTo(cardGlow, 0.45, 20, 240);
+            folderBtn.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { EasingFunction = EaseOut() });
+            fbScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.6, 1, TimeSpan.FromMilliseconds(280)) { EasingFunction = BackOut(0.6) });
+            fbScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.6, 1, TimeSpan.FromMilliseconds(280)) { EasingFunction = BackOut(0.6) });
+            fbLift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(8, 0, TimeSpan.FromMilliseconds(280)) { EasingFunction = BackOut(0.6) });
+        };
+        card.MouseLeave += (_, _) =>
+        {
+            over = false;
+            borderBrushAnim.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(borderColor, TimeSpan.FromMilliseconds(260)) { EasingFunction = EaseOut() });
+            bgBrushAnim.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(surfaceColor, TimeSpan.FromMilliseconds(260)) { EasingFunction = EaseOut() });
+            AnimScale(card, 1, 220);
+            liftXform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-4, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = EaseOut() });
+            GlowTo(cardGlow, 0, 0, 260);
+            folderBtn.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(160)) { EasingFunction = EaseOut() });
+            fbScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, 0.6, TimeSpan.FromMilliseconds(200)) { EasingFunction = EaseOut() });
+            fbScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, 0.6, TimeSpan.FromMilliseconds(200)) { EasingFunction = EaseOut() });
+            fbLift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, 8, TimeSpan.FromMilliseconds(200)) { EasingFunction = EaseOut() });
+        };
+        // left button: click-to-play OR drag the card onto a folder chip
+        card.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            _ghDragMoved = false;
+            _ghDragStart = e.GetPosition(this);
+            if (over) AnimScale(card, 0.97, 90);
+        };
+        card.PreviewMouseLeftButtonUp += (_, _) => { if (over) AnimScale(card, 1.045, 130); };
+        card.MouseMove += (_, e) =>
+        {
+            if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed || _ghDragMoved) return;
+            var pos = e.GetPosition(this);
+            if (Math.Abs(pos.X - _ghDragStart.X) < 10 && Math.Abs(pos.Y - _ghDragStart.Y) < 10) return;
+            _ghDragMoved = true;
+            try { DragDrop.DoDragDrop(card, new System.Windows.DataObject("naxi-place", game.PlaceId), System.Windows.DragDropEffects.Move); } catch { }
+        };
+        card.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            if (_ghDragMoved) { _ghDragMoved = false; return; } // the click was consumed by a drag
+            LaunchGame(game);
+        };
+        card.ContextMenu = BuildGameContextMenu(game);
+        return card;
+    }
+
+    // right-click menu on a game card: play / favorite / folders / copy link / website
+    private ContextMenu BuildGameContextMenu(HubGame game)
+    {
+        var menu = new ContextMenu();
+
+        var play = new MenuItem { Header = Localization.T("Play") };
+        play.Click += (_, _) => LaunchGame(game);
+        menu.Items.Add(play);
+
+        var hop = new MenuItem { Header = Localization.T("Server hopper") + (_config.IsMax ? "" : "  🔒") };
+        hop.Click += (_, _) => ShowServerHopper(game);
+        menu.Items.Add(hop);
+
+        var fav = new MenuItem { Header = Localization.T("Favorite"), IsChecked = game.Favorite };
+        fav.Click += (_, _) =>
+        {
+            if (_config.FavoritePlaceIds.Contains(game.PlaceId)) _config.FavoritePlaceIds.Remove(game.PlaceId);
+            else _config.FavoritePlaceIds.Add(game.PlaceId);
+            game.Favorite = _config.FavoritePlaceIds.Contains(game.PlaceId);
+            var cached = _ghAllGames?.FirstOrDefault(x => x.PlaceId == game.PlaceId);
+            if (cached != null) cached.Favorite = game.Favorite;
+            RobloxLauncher.SaveConfig(_config);
+            RebuildFolderBar();
+            ApplyHubView();
+        };
+        menu.Items.Add(fav);
+
+        var foldersMi = new MenuItem { Header = Localization.T("Add to folder") };
+        foreach (var f in _config.GameFolders)
+        {
+            var fLocal = f;
+            var mi = new MenuItem { Header = f.Name, IsChecked = f.PlaceIds.Contains(game.PlaceId) };
+            mi.Click += (_, _) =>
+            {
+                if (fLocal.PlaceIds.Contains(game.PlaceId)) fLocal.PlaceIds.Remove(game.PlaceId);
+                else fLocal.PlaceIds.Add(game.PlaceId);
+                RobloxLauncher.SaveConfig(_config);
+                RebuildFolderBar();
+                ApplyHubView();
+            };
+            foldersMi.Items.Add(mi);
+        }
+        if (_config.GameFolders.Count > 0) foldersMi.Items.Add(new Separator());
+        var newMi = new MenuItem { Header = Localization.T("New folder") };
+        newMi.Click += (_, _) => ShowNewFolderDialogFor(game);
+        foldersMi.Items.Add(newMi);
+        menu.Items.Add(foldersMi);
+
+        menu.Items.Add(new Separator());
+
+        var copy = new MenuItem { Header = Localization.T("Copy link") };
+        copy.Click += (_, _) =>
+        {
+            try { System.Windows.Clipboard.SetText($"https://www.roblox.com/games/{game.PlaceId}"); } catch { }
+            if (_ghSearchHint != null)
+            {
+                var original = _ghSearchHint.Text;
+                _ghSearchHint.Text = Localization.T("Copied to clipboard");
+                var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.6) };
+                t.Tick += (_, _) => { t.Stop(); _ghSearchHint.Text = original; };
+                t.Start();
+            }
+        };
+        menu.Items.Add(copy);
+
+        var web = new MenuItem { Header = Localization.T("Open in browser") };
+        web.Click += (_, _) =>
+        {
+            try { Process.Start(new ProcessStartInfo { FileName = $"https://www.roblox.com/games/{game.PlaceId}", UseShellExecute = true }); } catch { }
+        };
+        menu.Items.Add(web);
+        return menu;
+    }
+    private void ToggleGameFavorite(HubGame game, TextBlock star, Border starHost)
+    {
+        if (_config.FavoritePlaceIds.Contains(game.PlaceId)) _config.FavoritePlaceIds.Remove(game.PlaceId);
+        else _config.FavoritePlaceIds.Add(game.PlaceId);
+        game.Favorite = _config.FavoritePlaceIds.Contains(game.PlaceId);
+        RobloxLauncher.SaveConfig(_config);
+        star.Text = game.Favorite ? "\uE735" : "\uE734";
+        star.Foreground = game.Favorite
+            ? new SolidColorBrush(Color.FromRgb(0xE8, 0xC8, 0x60))
+            : new SolidColorBrush(Color.FromArgb(225, 255, 255, 255));
+
+        // springy pop + burst ring when favoriting
+        if (game.Favorite)
+        {
+            AnimScaleSpring(starHost, 1.38, 190);
+            var settle = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(210) };
+            settle.Tick += (_, _) => { settle.Stop(); AnimScaleSpring(starHost, 1, 260); };
+            settle.Start();
+            PlayBurst((System.Windows.Controls.Grid)starHost.Child, Color.FromRgb(0xE8, 0xC8, 0x60));
+        }
+        else
+        {
+            AnimScaleSpring(starHost, 1, 240);
+        }
+
+        // favorites always float to the top of the visible grid
+        var cached = _ghAllGames?.FirstOrDefault(x => x.PlaceId == game.PlaceId);
+        if (cached != null) cached.Favorite = game.Favorite;
+        RebuildFolderBar();
+        ApplyHubView();
+    }
+
+    // ---------- folder bar / filtering ----------
+
+    private void RebuildFolderBar()
+    {
+        if (_ghFolderBar == null) return;
+        _ghFolderBar.Children.Clear();
+
+        var accent = (Brush)FindResource("Accent");
+        var cardBorder = (Brush)FindResource("CardBorder");
+        var surface = (Brush)FindResource("Surface");
+        var surface2 = (Brush)FindResource("Surface2");
+        var text = (Brush)FindResource("Text");
+        var muted = (Brush)FindResource("Muted");
+        int delay = 0;
+
+        void AddChip(string label, string glyph, string? filterKey)
+        {
+            bool active = _ghFolderFilter == filterKey;
+            int count = filterKey switch
+            {
+                null => _ghAllGames?.Count ?? 0,
+                "__fav__" => (_ghAllGames ?? new List<HubGame>()).Count(x => _config.FavoritePlaceIds.Contains(x.PlaceId)),
+                _ => _config.GameFolders.FirstOrDefault(f => f.Name == filterKey) is GameFolder cf && _ghAllGames != null
+                        ? _ghAllGames.Count(x => cf.PlaceIds.Contains(x.PlaceId))
+                        : 0
+            };
+
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(14),
+                Padding = new Thickness(13, 6, 13, 6),
+                Margin = new Thickness(0, 0, 8, 6),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                BorderThickness = new Thickness(1),
+                BorderBrush = active ? accent : cardBorder,
+                Background = active ? surface2 : surface,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new ScaleTransform(1, 1)
+            };
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(new TextBlock { Text = glyph, FontFamily = NavIconFont, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = active ? accent : muted });
+            row.Children.Add(new TextBlock
+            {
+                Text = "  " + label,
+                FontSize = 12,
+                FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = active ? accent : text
+            });
+            row.Children.Add(new TextBlock { Text = "  " + count, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Foreground = muted });
+            chip.Child = row;
+
+            chip.MouseEnter += (_, _) => AnimScaleSpring(chip, 1.07, 200);
+            chip.MouseLeave += (_, _) => AnimScaleSpring(chip, 1, 220);
+            chip.PreviewMouseLeftButtonDown += (_, _) => AnimScale(chip, 0.94, 90);
+            chip.MouseLeftButtonUp += (_, e) => { e.Handled = true; AnimScaleSpring(chip, 1.07, 160); _ghFolderFilter = filterKey; RebuildFolderBar(); ApplyHubView(); };
+
+            if (filterKey != null && filterKey != "__fav__")
+            {
+                // drop target: drag a game card onto the chip to add it to the folder
+                chip.AllowDrop = true;
+                chip.DragEnter += (_, e) =>
+                {
+                    if (!e.Data.GetDataPresent("naxi-place")) return;
+                    e.Effects = System.Windows.DragDropEffects.Move;
+                    e.Handled = true;
+                    chip.BorderBrush = accent;
+                    chip.Background = surface2;
+                    AnimScaleSpring(chip, 1.1, 160);
+                };
+                chip.DragLeave += (_, _) =>
+                {
+                    chip.BorderBrush = active ? accent : cardBorder;
+                    chip.Background = active ? surface2 : surface;
+                    AnimScaleSpring(chip, 1, 180);
+                };
+                chip.Drop += (_, e) =>
+                {
+                    chip.BorderBrush = active ? accent : cardBorder;
+                    chip.Background = active ? surface2 : surface;
+                    AnimScaleSpring(chip, active ? 1.07 : 1, 180);
+                    if (e.Data.GetData("naxi-place") is not long pid) return;
+                    var folder = _config.GameFolders.FirstOrDefault(x => x.Name == filterKey);
+                    if (folder == null) return;
+                    if (!folder.PlaceIds.Contains(pid)) folder.PlaceIds.Add(pid);
+                    RobloxLauncher.SaveConfig(_config);
+                    RebuildFolderBar();
+                    ApplyHubView();
+                };
+
+                var name = filterKey;
+                var miRename = new MenuItem { Header = Localization.T("Rename") };
+                miRename.Click += (_, _) => RenameFolderDialog(name);
+                var miDelete = new MenuItem { Header = Localization.T("Delete") };
+                miDelete.Click += (_, _) => DeleteFolder(name);
+                var menu = new ContextMenu();
+                menu.Items.Add(miRename);
+                menu.Items.Add(miDelete);
+                chip.ContextMenu = menu;
+            }
+
+            FadeSlideIn(chip, delay, 8);
+            delay += 30;
+            _ghFolderBar.Children.Add(chip);
+        }
+
+        AddChip(Localization.T("All games"), "\uE71D", null);
+        AddChip(Localization.T("Favorites"), "\uE735", "__fav__");
+        foreach (var f in _config.GameFolders) AddChip(f.Name, "\uE8B7", f.Name);
+    }
+
+    private List<HubGame> CurrentHubQuery()
+    {
+        var all = _ghAllGames ?? new List<HubGame>();
+        IEnumerable<HubGame> q = all;
+        if (_ghFolderFilter == "__fav__") q = all.Where(x => _config.FavoritePlaceIds.Contains(x.PlaceId));
+        else if (_ghFolderFilter != null)
+        {
+            var f = _config.GameFolders.FirstOrDefault(x => x.Name == _ghFolderFilter);
+            q = f == null ? Enumerable.Empty<HubGame>() : all.Where(x => f.PlaceIds.Contains(x.PlaceId));
+        }
+        if (_ghGenreFilter != null) q = q.Where(x => string.Equals(x.Genre, _ghGenreFilter, StringComparison.OrdinalIgnoreCase));
+
+        // favorites always float to the top, then the chosen sort
+        IEnumerable<HubGame> sorted = _config.GameHubSort switch
+        {
+            "visits" => q.OrderByDescending(x => x.Favorite).ThenByDescending(x => x.Visits),
+            "name" => q.OrderByDescending(x => x.Favorite).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase),
+            _ => q.OrderByDescending(x => x.Favorite).ThenByDescending(x => x.Playing),
+        };
+        var list = sorted.ToList();
+
+        // 🎲 random pick floats to the top for this render only
+        if (_ghLucky != 0)
+        {
+            var lucky = list.FirstOrDefault(x => x.PlaceId == _ghLucky);
+            if (lucky != null) { list.Remove(lucky); list.Insert(0, lucky); }
+        }
+        return list;
+    }
+
+    private void ApplyHubView()
+    {
+        var list = CurrentHubQuery();
+        RenderGameCards(list, searchMode: false, emptyText: Localization.T("Nothing here yet."));
+        var recent = BuildRecentStrip();
+        if (recent != null) _gamesList.Children.Insert(0, recent);
+        _ghLucky = 0;
+    }
+
+    private string SortLabel(string key) => key switch
+    {
+        "visits" => Localization.T("Visits"),
+        "name" => Localization.T("Name"),
+        _ => Localization.T("Players")
+    };
+
+    private void UpdateSortBtnLabel()
+    {
+        if (_ghSortBtn != null) _ghSortBtn.Content = Localization.T("Sort") + ": " + SortLabel(_config.GameHubSort) + "  ▾";
+    }
+
+    private void CycleGameHubSort()
+    {
+        _config.GameHubSort = _config.GameHubSort switch { "players" => "visits", "visits" => "name", _ => "players" };
+        RobloxLauncher.SaveConfig(_config);
+        UpdateSortBtnLabel();
+        ApplyHubView();
+    }
+
+    private void UpdateGenreBtnLabel()
+    {
+        if (_ghGenreBtn != null) _ghGenreBtn.Content = Localization.T("Genre") + ": " + (_ghGenreFilter ?? Localization.T("All")) + "  ▾";
+    }
+
+    private void CycleGameHubGenre()
+    {
+        var genres = (_ghAllGames ?? new List<HubGame>())
+            .Select(x => x.Genre).Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+        if (genres.Count == 0) return;
+        int idx = _ghGenreFilter == null ? -1
+            : genres.FindIndex(g => string.Equals(g, _ghGenreFilter, StringComparison.OrdinalIgnoreCase));
+        _ghGenreFilter = idx + 1 >= genres.Count ? null : genres[idx + 1];
+        UpdateGenreBtnLabel();
+        ApplyHubView();
+    }
+
+    private void PickRandomGame()
+    {
+        var list = CurrentHubQuery();
+        if (list.Count == 0) return;
+        _ghLucky = list[Random.Shared.Next(list.Count)].PlaceId;
+        ApplyHubView();
+    }
+
+    // ---------- recently played (Naxi MAX) ----------
+
+    private FrameworkElement? BuildRecentStrip()
+    {
+        if (!_config.IsMax || _config.RecentPlaceIds.Count == 0) return null;
+        var host = new StackPanel { Margin = new Thickness(0, 2, 0, 10) };
+        host.Children.Add(T(Localization.T("Recently played"), 12, (Brush)FindResource("Muted"), true));
+        var scroller = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(0, 8, 0, 0) };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        int idx = 0;
+        foreach (var pid in _config.RecentPlaceIds.Take(8))
+        {
+            var g = (_ghAllGames ?? new List<HubGame>()).FirstOrDefault(x => x.PlaceId == pid)
+                    ?? new HubGame { PlaceId = pid, Name = "Place " + pid };
+            panel.Children.Add(BuildRecentCard(g, idx++));
+        }
+        scroller.Content = panel;
+        host.Children.Add(scroller);
+        return host;
+    }
+
+    private Border BuildRecentCard(HubGame game, int index)
+    {
+        var cardBorder = (Brush)FindResource("CardBorder");
+        var surface = (Brush)FindResource("Surface");
+        var card = new Border
+        {
+            Width = 132,
+            Height = 130,
+            CornerRadius = new CornerRadius(11),
+            Background = surface,
+            BorderBrush = cardBorder,
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(0, 0, 10, 0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            ClipToBounds = true,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(1, 1)
+        };
+        var sp = new StackPanel();
+        var imgWrap = new Border { Height = 72, CornerRadius = new CornerRadius(10, 10, 0, 0), ClipToBounds = true, Background = (Brush)FindResource("InputBg") };
+        var img = new Image { Stretch = Stretch.UniformToFill, Opacity = 0 };
+        imgWrap.Child = img;
+        _ = LoadGameIconAsync(game, img);
+        sp.Children.Add(imgWrap);
+        var info = new StackPanel { Margin = new Thickness(8, 5, 8, 0) };
+        info.Children.Add(new TextBlock { Text = game.Name, FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Text"), TextTrimming = TextTrimming.CharacterEllipsis });
+        var secs = _config.PlaySeconds.TryGetValue(game.PlaceId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var s) ? s : 0;
+        if (secs > 0)
+            info.Children.Add(new TextBlock { Text = FormatPlayTime(secs), FontSize = 10, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 2, 0, 0) });
+        sp.Children.Add(info);
+        card.Child = sp;
+        card.MouseEnter += (_, _) => AnimScaleSpring(card, 1.06, 180);
+        card.MouseLeave += (_, _) => AnimScaleSpring(card, 1, 200);
+        card.MouseLeftButtonUp += (_, e) => { e.Handled = true; JoinServerAsync(game, null); };
+        FadeSlideIn(card, Math.Min(index * 40, 240), 8);
+        return card;
+    }
+
+    private static string FormatPlayTime(long seconds)
+    {
+        if (seconds >= 3600) return $"{seconds / 3600} h {(seconds % 3600) / 60} m";
+        if (seconds >= 60) return $"{seconds / 60} m";
+        return "< 1 m";
+    }
+
+    // ---------- folder dialogs ----------
+
+    private void ShowPromptDialog(string title, string initial, string okTextKey, Action<string> onConfirm)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Owner = this,
+            Width = 430,
+            SizeToContent = SizeToContent.Height,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var shell = new Border
+        {
+            CornerRadius = new CornerRadius(20),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(50, 66, 84)),
+            BorderThickness = new Thickness(1),
+            ClipToBounds = true,
+            Opacity = 0,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(0.85, 0.85),
+            Background = new LinearGradientBrush(Color.FromRgb(10, 18, 31), Color.FromRgb(13, 25, 42), new Point(0, 0), new Point(1, 1))
+        };
+        var root = new StackPanel { Margin = new Thickness(22) };
+        root.Children.Add(T(title, 17, (Brush)FindResource("Text"), true));
+
+        var box = new TextBox { Style = (Style)FindResource("InputBox"), Margin = new Thickness(0, 14, 0, 0), FontSize = 13.5, Text = initial };
+        root.Children.Add(box);
+
+        var err = new TextBlock { Text = Localization.T("This folder already exists."), FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0x6A, 0x6A)), Margin = new Thickness(0, 8, 0, 0), Visibility = Visibility.Collapsed, Opacity = 0 };
+        root.Children.Add(err);
+
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var cancel = new Button { Style = (Style)FindResource("PillButton"), Content = Localization.T("Cancel"), MinWidth = 92, Height = 32, Cursor = System.Windows.Input.Cursors.Hand };
+        var ok = new Button { Style = (Style)FindResource("PillButton"), Content = okTextKey, MinWidth = 92, Height = 32, Margin = new Thickness(8, 0, 0, 0), Cursor = System.Windows.Input.Cursors.Hand };
+        btnRow.Children.Add(cancel);
+        btnRow.Children.Add(ok);
+        root.Children.Add(btnRow);
+        shell.Child = root;
+        dialog.Content = shell;
+
+        var closing = false;
+        void CloseAnimated()
+        {
+            if (closing) return;
+            closing = true;
+            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(150)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+            var scale = new DoubleAnimation(1, 0.9, TimeSpan.FromMilliseconds(150)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+            fade.Completed += (_, _) => dialog.Close();
+            shell.BeginAnimation(UIElement.OpacityProperty, fade);
+            if (shell.RenderTransform is ScaleTransform st)
+            {
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, scale);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, scale);
+            }
+        }
+
+        void Confirm()
+        {
+            var name = box.Text.Trim();
+            if (name.Length == 0) return;
+            if (_config.GameFolders.Any(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                err.Visibility = Visibility.Visible;
+                err.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
+                return;
+            }
+            onConfirm(name);
+            CloseAnimated();
+        }
+
+        ok.Click += (_, _) => Confirm();
+        cancel.Click += (_, _) => CloseAnimated();
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; Confirm(); } };
+        dialog.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) CloseAnimated(); };
+        dialog.Loaded += (_, _) =>
+        {
+            shell.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = EaseOut() });
+            if (shell.RenderTransform is ScaleTransform st)
+            {
+                var sx = new DoubleAnimation(0.85, 1, TimeSpan.FromMilliseconds(240)) { EasingFunction = EaseOut() };
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, sx);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, sx);
+            }
+            box.Focus();
+            box.SelectAll();
+        };
+        dialog.ShowDialog();
+    }
+
+    private async Task LoadGameIconAsync(HubGame game, Image img)
+    {
+        try
+        {
+            var bytes = await GameHubService.GetIconBytesAsync(game.UniverseId, game.IconUrl);
+            if (bytes == null || bytes.Length == 0) return;
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.StreamSource = new MemoryStream(bytes);
+            bmp.EndInit();
+            bmp.Freeze();
+            img.Source = bmp;
+            img.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)));
+        }
+        catch { }
+    }
+
+    private bool _ghSearching;
+
+    private async void GhSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || _ghSearch == null || _ghSearching) return;
+        var q = _ghSearch.Text.Trim();
+        if (q.Length == 0) { _ = LoadGameHubAsync(); return; }
+
+        // Roblox link pasted? (roblox.com/games/{id}/... or ?placeid=) -> launch directly
+        var m = System.Text.RegularExpressions.Regex.Match(q, @"games/(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(q, @"placeid=(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success)
+        {
+            LaunchGame(new HubGame { PlaceId = long.Parse(m.Groups[1].Value), Name = "Roblox" });
+            return;
+        }
+
+        _ghSearching = true;
+        int seq = ++_ghLoadSeq;
+        _gamesList.Children.Clear();
+        _gamesList.Children.Add(T("Loading games...", 13, (Brush)FindResource("Muted"), false, 12));
+        try
+        {
+            var games = await GameHubService.SearchAsync(q);
+            foreach (var gm in games) gm.Favorite = _config.FavoritePlaceIds.Contains(gm.PlaceId);
+            games = games.OrderByDescending(g => g.Favorite).ThenByDescending(g => g.Playing).ToList();
+            if (seq != _ghLoadSeq) return;
+            RenderGameCards(games, searchMode: true);
+        }
+        finally { _ghSearching = false; }
+    }
+    private async void LaunchGame(HubGame game) => _ = JoinServerAsync(game, null);
+
+    private async Task JoinServerAsync(HubGame game, string? serverId)
+    {
+        var player = RobloxLauncher.FindPlayerFolders().FirstOrDefault();
+        if (player == null)
+        {
+            MessageBox.Show("Roblox is not installed yet. Install it from roblox.com first.", "Naxi Bootstrap", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "play_debug.log");
+        RobloxLauncher.LogDebug(logFile, $"Game Hub launch: place {game.PlaceId}");
+
+        RobloxLauncher.RefreshTokensFromDat();
+        var accounts = AccountStore.Load();
+        var acc = accounts.FirstOrDefault(a => a.UserId == _config.LastUsedAccountId) ?? accounts.FirstOrDefault();
+        if (acc != null)
+        {
+            var token = AccountStore.Unprotect(acc.ProtectedToken);
+            RobloxLauncher.SetRobloxCookie(token);
+            RobloxLauncher.SetModernCookie(token);
+        }
+
+        // NB: a self-minted roblox-player: URL cannot join a place — the client
+        // only honors gameinfo/placelauncherurl tickets signed by the website and
+        // silently ignores keys like placi: (it just opens the app home instead).
+        // The official deep link roblox://experiences/start?placeId= makes the
+        // client resolve the join itself with its own session (verified live:
+        // the client logs "! Joining game ... place <id> at <server-ip>").
+        // A running client swallows the deep link, so close it first — this also
+        // lets the freshly written cookies above be picked up on a clean start.
+        var running = Process.GetProcessesByName("RobloxPlayerBeta");
+        if (running.Length > 0)
+        {
+            RobloxLauncher.LogDebug(logFile, $"Game Hub: closing {running.Length} running client(s)");
+            foreach (var p in running) try { p.Kill(); } catch { }
+            await Task.Delay(1500);
+        }
+
+        var url = $"roblox://experiences/start?placeId={game.PlaceId}";
+
+        if (serverId != null)
+        {
+            // Naxi MAX server hopper: join the exact instance the user picked
+            url += $"&gameInstanceId={serverId}";
+            RobloxLauncher.LogDebug(logFile, $"Game Hub: joining chosen server {serverId}");
+        }
+        else if (HasPro)
+        {
+            // Pro: join a concrete server instead of a random match. Roblox does not
+            // expose per-server ping, so we pick one of the eight least loaded public
+            // instances (fewer players → less sim load, fewer latency spikes).
+            RobloxLauncher.LogDebug(logFile, "Game Hub: Pro best-server lookup");
+            var srv = await GameHubService.GetBestServerAsync(game.PlaceId);
+            if (srv != null)
+            {
+                url += $"&gameInstanceId={srv.Id}";
+                RobloxLauncher.LogDebug(logFile, $"Game Hub: picked server {srv.Id} ({srv.Playing}/{srv.MaxPlayers} players)");
+            }
+            else
+            {
+                RobloxLauncher.LogDebug(logFile, "Game Hub: no server list, falling back to auto-match");
+            }
+        }
+
+        // LaunchFromUrlAsync applies the game profile/flags and starts the
+        // player executable directly with the URL — no roblox-player: shell
+        // round-trip through this app. The placeid= regex in GetPlaceInfoAsync
+        // matches the deep link's placeId= too, so the profile still resolves.
+        await RobloxLauncher.LaunchFromUrlAsync(url, _config);
+
+        // auto-rejoin tracking (start the watcher before hiding the window)
+        _lastJoinPlaceId = game.PlaceId;
+        _lastJoinName = game.Name;
+        _joinStartedUtc = DateTime.UtcNow;
+        _robloxWasRunning = true;
+        _robloxLastSeen = DateTime.UtcNow;
+        _rejoinTries = 0;
+        EnsureRejoinWatcher();
+
+        // Naxi MAX: remember this launch for the "Recently played" strip
+        if (_config.IsMax)
+        {
+            _config.RecentPlaceIds.Remove(game.PlaceId);
+            _config.RecentPlaceIds.Insert(0, game.PlaceId);
+            if (_config.RecentPlaceIds.Count > 8) _config.RecentPlaceIds.RemoveRange(8, _config.RecentPlaceIds.Count - 8);
+            RobloxLauncher.SaveConfig(_config);
+        }
+
+        Close();
+    }
+
+    // ---------- auto-rejoin ----------
+
+    // Roblox clients regularly drop with error 277/268/6 (network hiccups,
+    // server restarts). When AutoRejoin is on we watch the player process:
+    // if it dies soon after we launched it, a small overlay offers a 10-second
+    // countdown that rejoins the same place automatically.
+    private void EnsureRejoinWatcher()
+    {
+        if (_rejoinTimer != null) return;
+        _rejoinTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _rejoinTimer.Tick += (_, _) => RejoinTick();
+        _rejoinTimer.Start();
+    }
+
+    // Naxi MAX: drive Discord Rich Presence from the live Roblox session
+    private void UpdateAutoRpc(bool inGame)
+    {
+        try
+        {
+            if (!_config.IsMax || !_config.RpcAutoGame) return;
+            string? name = inGame && _lastJoinPlaceId != 0
+                ? (string.IsNullOrWhiteSpace(_lastJoinName) ? "Roblox" : _lastJoinName)
+                : null;
+            if (DiscordRpcService.AutoGameName == name) return;
+            DiscordRpcService.AutoGameName = name;
+            DiscordRpcService.Update(_config);
+        }
+        catch { }
+    }
+
+    private void RejoinTick()
+    {
+        bool running = false;
+        try { running = Process.GetProcessesByName("RobloxPlayerBeta").Length > 0; } catch { }
+        if (running)
+        {
+            _robloxWasRunning = true;
+            _robloxLastSeen = DateTime.UtcNow;
+            // Naxi MAX: playtime tracking + live Discord presence
+            if (_lastJoinPlaceId != 0)
+            {
+                var key = _lastJoinPlaceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                _config.PlaySeconds[key] = (_config.PlaySeconds.TryGetValue(key, out var sec) ? sec : 0) + 2;
+                if (++_playSaveCounter >= 15) { _playSaveCounter = 0; RobloxLauncher.SaveConfig(_config); }
+                UpdateAutoRpc(true);
+            }
+            return;
+        }
+
+        UpdateAutoRpc(false);
+
+        bool gracePassed = (DateTime.UtcNow - _robloxLastSeen).TotalSeconds > 4;
+        bool wasInSession = _robloxWasRunning && (DateTime.UtcNow - _joinStartedUtc).TotalSeconds > 25;
+        if (!gracePassed || !wasInSession || _lastJoinPlaceId == 0) return;
+
+        _robloxWasRunning = false;
+        if (!_config.AutoRejoin) return;
+        ShowRejoinOffer();
+    }
+
+    // ---------- server hopper (Naxi MAX) ----------
+
+    private async void ShowServerHopper(HubGame game)
+    {
+        if (!_config.IsMax) { ShowProInviteDialog(allowWhenActive: true); return; }
+        var surface = (Brush)FindResource("Surface");
+        var dlg = new Window
+        {
+            Title = "Naxi Bootstrap",
+            Width = 470,
+            Height = 540,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            WindowStyle = WindowStyle.ToolWindow,
+            ResizeMode = ResizeMode.NoResize,
+            Background = surface,
+            Opacity = 0
+        };
+        var root = new Grid { Margin = new Thickness(18) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var head = new StackPanel();
+        head.Children.Add(T(Localization.T("Server hopper"), 18, (Brush)FindResource("Text"), true));
+        head.Children.Add(T(game.Name, 12.5, (Brush)FindResource("Muted"), false, 2));
+        Grid.SetRow(head, 0); root.Children.Add(head);
+
+        var listScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 12, 0, 0), ClipToBounds = true };
+        SmoothScroll.SetEnabled(listScroll, true);
+        var list = new StackPanel();
+        listScroll.Content = list;
+        Grid.SetRow(listScroll, 1); root.Children.Add(listScroll);
+
+        var foot = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+        var refresh = Btn(Localization.T("Refresh"), false, 120);
+        var status = T("", 12, (Brush)FindResource("Muted"), false);
+        status.VerticalAlignment = VerticalAlignment.Center;
+        status.Margin = new Thickness(12, 0, 0, 0);
+        foot.Children.Add(refresh);
+        foot.Children.Add(status);
+        Grid.SetRow(foot, 2); root.Children.Add(foot);
+        dlg.Content = root;
+
+        bool loading = false;
+        async Task Load()
+        {
+            if (loading) return;
+            loading = true;
+            refresh.IsEnabled = false;
+            status.Text = Localization.T("Loading servers...");
+            list.Children.Clear();
+            var servers = await GameHubService.GetServersAsync(game.PlaceId, 3);
+            list.Children.Clear();
+            status.Text = servers.Count == 0 ? "" : Localization.T("# servers").Replace("#", servers.Count.ToString());
+            if (servers.Count == 0)
+                list.Children.Add(T(Localization.T("No servers found"), 12.5, (Brush)FindResource("Muted"), false, 8));
+            int i = 0;
+            foreach (var s in servers.OrderBy(x => x.Playing).Take(60))
+                list.Children.Add(BuildServerRow(game, s, ++i, dlg));
+            refresh.IsEnabled = true;
+            loading = false;
+        }
+        refresh.Click += (_, _) => _ = Load();
+        dlg.Loaded += (_, _) =>
+        {
+            dlg.BeginAnimation(Window.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
+            _ = Load();
+        };
+        dlg.Show();
+    }
+
+    private FrameworkElement BuildServerRow(HubGame game, RobloxServerEntry s, int index, Window dlg)
+    {
+        var accent = (Brush)FindResource("Accent");
+        var row = new Border
+        {
+            Padding = new Thickness(12, 9, 12, 9),
+            CornerRadius = new CornerRadius(10),
+            Margin = new Thickness(0, 2, 0, 2),
+            Background = Brushes.Transparent,
+            Cursor = System.Windows.Input.Cursors.Hand
+        };
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var idx = new TextBlock { Text = "#" + index, FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(idx, 0); grid.Children.Add(idx);
+
+        var mid = new StackPanel { Margin = new Thickness(12, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+        mid.Children.Add(new TextBlock { Text = $"{s.Playing} / {s.MaxPlayers} {Localization.T("players")}", FontSize = 13, Foreground = (Brush)FindResource("Text") });
+        var load = s.Playing / Math.Max(1d, (double)s.MaxPlayers);
+        var barBg = new Border { Height = 5, CornerRadius = new CornerRadius(3), Background = (Brush)FindResource("InputBg"), Margin = new Thickness(0, 5, 0, 0) };
+        barBg.Child = new Border { Height = 5, CornerRadius = new CornerRadius(3), Background = accent, Width = Math.Max(6, 200 * load), HorizontalAlignment = HorizontalAlignment.Left };
+        mid.Children.Add(barBg);
+        Grid.SetColumn(mid, 1); grid.Children.Add(mid);
+
+        var join = SmallBtn(Localization.T("Join"), true, 90);
+        join.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(join, 2); grid.Children.Add(join);
+
+        row.Child = grid;
+        row.MouseEnter += (_, _) => row.Background = (Brush)FindResource("NavHover");
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        async void DoJoin() { dlg.Close(); await JoinServerAsync(new HubGame { PlaceId = game.PlaceId, Name = game.Name }, s.Id); }
+        join.Click += (_, _) => DoJoin();
+        row.MouseLeftButtonUp += (_, e) => { e.Handled = true; DoJoin(); };
+        FadeSlideIn(row, Math.Min(index * 24, 300), 6);
+        return row;
+    }
+
+    // ---------- quick launch overlay (Naxi MAX, Alt+R) ----------
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    private const int HotkeyId = 0xA11C;
+    private Window? _quickLaunch;
+
+    private void ApplyQuickHotkey()
+    {
+        try
+        {
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            if (helper.Handle == IntPtr.Zero) return;
+            UnregisterHotKey(helper.Handle, HotkeyId);
+            if (_config.IsMax && _config.QuickHotkey)
+                RegisterHotKey(helper.Handle, HotkeyId, 1 /* MOD_ALT */, 0x52 /* R */);
+        }
+        catch { }
+    }
+
+    private async void ShowQuickLaunch()
+    {
+        if (!_config.IsMax) { ShowProInviteDialog(allowWhenActive: true); return; }
+        if (_quickLaunch != null) { _quickLaunch.Activate(); return; }
+
+        var dlg = new Window
+        {
+            Title = "Quick Launch — Naxi Bootstrap",
+            Width = 640,
+            SizeToContent = SizeToContent.Height,
+            MaxHeight = 560,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            WindowStyle = WindowStyle.None,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            Topmost = true,
+            Opacity = 0
+        };
+        _quickLaunch = dlg;
+
+        // Outer shadow + card — выглядит как встроенная панель лаунчера
+        var shadow = new Border
+        {
+            CornerRadius = new CornerRadius(18),
+            Background = Brushes.Transparent,
+            Margin = new Thickness(14),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Color.FromRgb(0, 0, 0),
+                BlurRadius = 28,
+                ShadowDepth = 8,
+                Opacity = 0.55,
+                Direction = 270
+            }
+        };
+
+        var card = new Border
+        {
+            Background = (Brush)FindResource("Surface"),
+            BorderBrush = (Brush)FindResource("CardBorder"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(18),
+            ClipToBounds = true
+        };
+        // top accent line like launcher
+        var accentLine = new Border
+        {
+            Height = 1,
+            VerticalAlignment = VerticalAlignment.Top,
+            Background = new LinearGradientBrush(Color.FromRgb(0x8F, 0xC4, 0xEA), Color.FromRgb(0x8B, 0x5C, 0xF6), new Point(0, 0), new Point(1, 0)),
+            Opacity = 0.9
+        };
+
+        var root = new Grid();
+        root.Children.Add(card);
+        root.Children.Add(accentLine);
+
+        var body = new StackPanel { Margin = new Thickness(18) };
+        card.Child = body;
+        shadow.Child = root;
+
+        // ——— Header: бренд лаунчера + бейдж MAX ———
+        var header = new Grid { Margin = new Thickness(2, 2, 2, 0) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition());
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var logo = new Border
+        {
+            Width = 36,
+            Height = 36,
+            CornerRadius = new CornerRadius(11),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new LinearGradientBrush(Color.FromRgb(0x8B, 0x5C, 0xF6), Color.FromRgb(0x5B, 0x21, 0xB6), new Point(0, 0), new Point(1, 1))
+        };
+        logo.Child = new TextBlock { Text = "N", FontSize = 16, FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(logo, 0);
+        header.Children.Add(logo);
+
+        var titleStack = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        titleStack.Children.Add(new TextBlock { Text = "Быстрый запуск", FontSize = 15, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Text") });
+        titleStack.Children.Add(new TextBlock { Text = "Naxi Bootstrap", FontSize = 11, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 1, 0, 0) });
+        Grid.SetColumn(titleStack, 1);
+        header.Children.Add(titleStack);
+
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var maxBadge = new Border
+        {
+            Background = new LinearGradientBrush(Color.FromRgb(0x8B, 0x5C, 0xF6), Color.FromRgb(0x5B, 0x21, 0xB6), new Point(0, 0), new Point(1, 1)),
+            CornerRadius = new CornerRadius(9),
+            Padding = new Thickness(10, 4, 10, 5),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+            Child = new TextBlock { Text = "MAX  •  Alt+R", FontSize = 10.5, FontWeight = FontWeights.Bold, Foreground = Brushes.White }
+        };
+        right.Children.Add(maxBadge);
+        var closeBtn = new Button { Content = "✕", Width = 30, Height = 30, Style = (Style)FindResource("WindowButton"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Esc" };
+        closeBtn.Click += (_, _) => CloseQuick();
+        right.Children.Add(closeBtn);
+        Grid.SetColumn(right, 2);
+        header.Children.Add(right);
+
+        body.Children.Add(header);
+
+        // ——— Search box: большой, красивый, с иконкой ———
+        var searchWrap = new Border
+        {
+            Background = (Brush)FindResource("InputBg"),
+            BorderBrush = (Brush)FindResource("InputBorder"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(13),
+            Margin = new Thickness(0, 16, 0, 0),
+            Padding = new Thickness(0),
+            ClipToBounds = true
+        };
+        var searchGrid = new Grid { Height = 48 };
+        searchGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        searchGrid.ColumnDefinitions.Add(new ColumnDefinition());
+        searchGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var mag = new TextBlock { Text = "⌕", FontSize = 18, Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0), Opacity = 0.95 };
+        Grid.SetColumn(mag, 0);
+        searchGrid.Children.Add(mag);
+        var box = new TextBox
+        {
+            Background = Brushes.Transparent,
+            Foreground = (Brush)FindResource("Text"),
+            CaretBrush = (Brush)FindResource("Text"),
+            BorderThickness = new Thickness(0),
+            FontSize = 15,
+            VerticalAlignment = VerticalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(10, 0, 0, 0),
+            Margin = new Thickness(0, 0, 12, 0)
+        };
+        Grid.SetColumn(box, 1);
+        searchGrid.Children.Add(box);
+        // placeholder
+        var placeholder = new TextBlock
+        {
+            Text = "Поиск игр или вставьте Roblox-ссылку…",
+            FontSize = 14,
+            Foreground = (Brush)FindResource("Muted"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+            IsHitTestVisible = false,
+            Opacity = 0.95
+        };
+        Grid.SetColumn(placeholder, 1);
+        searchGrid.Children.Add(placeholder);
+
+        var hintEnter = new Border
+        {
+            Background = (Brush)FindResource("NavShellBg"),
+            BorderBrush = (Brush)FindResource("PillBorder"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8, 4, 8, 5),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+            Child = new TextBlock { Text = "↵", FontSize = 11, Foreground = (Brush)FindResource("Muted"), FontWeight = FontWeights.SemiBold }
+        };
+        Grid.SetColumn(hintEnter, 2);
+        searchGrid.Children.Add(hintEnter);
+
+        searchWrap.Child = searchGrid;
+        body.Children.Add(searchWrap);
+
+        void UpdatePlaceholder() => placeholder.Visibility = string.IsNullOrWhiteSpace(box.Text) ? Visibility.Visible : Visibility.Collapsed;
+        box.TextChanged += (_, _) => UpdatePlaceholder();
+
+        // focus accent
+        box.GotFocus += (_, _) => { searchWrap.BorderBrush = (Brush)FindResource("Accent"); searchWrap.Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Color.FromRgb(0x7C, 0xB7, 0xE0), BlurRadius = 14, ShadowDepth = 0, Opacity = 0.22 }; };
+        box.LostFocus += (_, _) => { searchWrap.BorderBrush = (Brush)FindResource("InputBorder"); searchWrap.Effect = null; };
+
+        // ——— Results ———
+        var scroll = new ScrollViewer
+        {
+            MaxHeight = 320,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Margin = new Thickness(0, 12, 0, 0),
+            ClipToBounds = true
+        };
+        SmoothScroll.SetEnabled(scroll, true);
+        var results = new StackPanel();
+        scroll.Content = results;
+        body.Children.Add(scroll);
+
+        var footer = new Border
+        {
+            BorderBrush = (Brush)FindResource("CardBorder"),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Margin = new Thickness(-18, 14, -18, -18),
+            Padding = new Thickness(18, 10, 18, 12),
+            Background = new SolidColorBrush(Color.FromRgb(0x10, 0x13, 0x1A)),
+            CornerRadius = new CornerRadius(0, 0, 18, 18)
+        };
+        footer.Child = new TextBlock { Text = "↵ Enter — запустить   •   Esc — закрыть   •   ↑↓ — выбор", FontSize = 11, Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Center };
+        body.Children.Add(footer);
+
+        dlg.Content = shadow;
+
+        int selected = -1;
+        void RefreshSelection()
+        {
+            for (int i = 0; i < results.Children.Count; i++)
+                if (results.Children[i] is Border b)
+                {
+                    bool sel = i == selected;
+                    b.Background = sel ? (Brush)FindResource("NavHover") : Brushes.Transparent;
+                    b.BorderBrush = sel ? new SolidColorBrush(Color.FromRgb(0x3A, 0x41, 0x4E)) : Brushes.Transparent;
+                    b.BorderThickness = sel ? new Thickness(1) : new Thickness(1);
+                }
+        }
+
+        var debounce = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        void CloseQuick() { _quickLaunch = null; dlg.Close(); }
+
+        async Task RunSearch()
+        {
+            var q = box.Text.Trim();
+            results.Children.Clear();
+            selected = -1;
+            if (q.Length == 0)
+            {
+                var empty = new Border { Padding = new Thickness(14, 16, 14, 16), CornerRadius = new CornerRadius(12), Background = (Brush)FindResource("PillBg"), BorderBrush = (Brush)FindResource("PillBorder"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 2, 0, 0) };
+                empty.Child = new TextBlock { Text = "Начни печатать — найдём игру мгновенно", FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Text") };
+                results.Children.Add(empty);
+                return;
+            }
+            var games = await GameHubService.SearchAsync(q);
+            results.Children.Clear();
+            int idx = 0;
+            foreach (var gm in games.Take(7))
+            {
+                var g2 = gm;
+                int myIdx = idx;
+                var row = new Border
+                {
+                    Padding = new Thickness(12, 10, 12, 10),
+                    CornerRadius = new CornerRadius(12),
+                    Margin = new Thickness(0, 6, 0, 0),
+                    Background = Brushes.Transparent,
+                    BorderBrush = Brushes.Transparent,
+                    BorderThickness = new Thickness(1),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Tag = g2
+                };
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                grid.ColumnDefinitions.Add(new ColumnDefinition());
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var icon = new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(10), Background = (Brush)FindResource("PillBg"), BorderBrush = (Brush)FindResource("PillBorder"), BorderThickness = new Thickness(1), VerticalAlignment = VerticalAlignment.Center };
+                icon.Child = new TextBlock { Text = "🎮", FontSize = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(icon, 0);
+                grid.Children.Add(icon);
+                var sp = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                sp.Children.Add(new TextBlock { Text = gm.Name, FontSize = 13.5, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource("Text"), TextTrimming = TextTrimming.CharacterEllipsis });
+                sp.Children.Add(new TextBlock { Text = $"{gm.Creator}  ·  {FormatGameCount(gm.Playing)} {Localization.T("playing")}", FontSize = 11, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 2, 0, 0) });
+                Grid.SetColumn(sp, 1);
+                grid.Children.Add(sp);
+                var go = new Border { Background = (Brush)FindResource("AccentGradient"), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 5, 10, 6), VerticalAlignment = VerticalAlignment.Center, Child = new TextBlock { Text = "Играть", FontSize = 11, FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("AccentText") } };
+                Grid.SetColumn(go, 2);
+                grid.Children.Add(go);
+                row.Child = grid;
+                row.MouseEnter += (_, _) => { selected = myIdx; RefreshSelection(); };
+                row.MouseLeftButtonUp += (_, e) => { e.Handled = true; CloseQuick(); JoinServerAsync(g2, null); };
+                results.Children.Add(row);
+                FadeSlideIn(row, (results.Children.Count) * 28, 7);
+                idx++;
+            }
+            if (results.Children.Count == 0)
+            {
+                var nf = new Border { Padding = new Thickness(14, 12, 14, 12), CornerRadius = new CornerRadius(12), Background = (Brush)FindResource("PillBg"), BorderBrush = (Brush)FindResource("PillBorder"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 6, 0, 0) };
+                nf.Child = new TextBlock { Text = Localization.T("No games found"), FontSize = 12.5, Foreground = (Brush)FindResource("Muted") };
+                results.Children.Add(nf);
+            }
+            else
+            {
+                selected = 0;
+                RefreshSelection();
+                // ensure first visible
+                scroll.ScrollToTop();
+            }
+        }
+
+        // initial empty state
+        _ = RunSearch();
+
+        debounce.Tick += (_, _) => { debounce.Stop(); _ = RunSearch(); };
+        box.TextChanged += (_, _) => { debounce.Stop(); debounce.Start(); };
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Down)
+            {
+                if (results.Children.Count > 0) { selected = Math.Min(selected + 1, results.Children.Count - 1); RefreshSelection(); if (selected >= 0 && results.Children[selected] is FrameworkElement fe) fe.BringIntoView(); }
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Up)
+            {
+                if (results.Children.Count > 0) { selected = Math.Max(selected - 1, 0); RefreshSelection(); if (selected >= 0 && results.Children[selected] is FrameworkElement fe2) fe2.BringIntoView(); }
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape) { CloseQuick(); e.Handled = true; }
+            else if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                Border? target = null;
+                if (selected >= 0 && selected < results.Children.Count && results.Children[selected] is Border sb && sb.Tag is HubGame) target = sb;
+                else if (results.Children.Count > 0 && results.Children[0] is Border fb && fb.Tag is HubGame) target = fb;
+                if (target != null && target.Tag is HubGame hit) { CloseQuick(); JoinServerAsync(hit, null); }
+                else _ = RunSearch();
+            }
+        };
+        dlg.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) CloseQuick(); };
+        dlg.Closed += (_, _) => { if (ReferenceEquals(_quickLaunch, dlg)) _quickLaunch = null; };
+        dlg.Loaded += (_, _) =>
+        {
+            var anim = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            dlg.BeginAnimation(Window.OpacityProperty, anim);
+            var scale = new ScaleTransform(0.96, 0.96);
+            shadow.RenderTransform = scale;
+            shadow.RenderTransformOrigin = new Point(0.5, 0.0);
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.96, 1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 } });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.96, 1, TimeSpan.FromMilliseconds(260)) { EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 } });
+            box.Focus();
+            UpdatePlaceholder();
+        };
+        dlg.Show();
+        dlg.Activate();
+    }
+
+    private void ShowRejoinOffer()
+    {
+        if (_rejoinWindow != null) { _rejoinWindow.Activate(); return; }
+        _rejoinWindow = BuildRejoinWindow(10);
+        _rejoinWindow.Show();
+    }
+
+    private Window BuildRejoinWindow(int initialSeconds)
+    {
+        var surface = (Brush)FindResource("Surface");
+        var dlg = new Window
+        {
+            Title = "Naxi Bootstrap",
+            Width = 380,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            WindowStyle = WindowStyle.ToolWindow,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            Topmost = true,
+            Background = surface,
+            Opacity = 0
+        };
+
+        var panel = new StackPanel { Margin = new Thickness(24) };
+        panel.Children.Add(T(Localization.T("Disconnected"), 17, (Brush)FindResource("Text"), true));
+        var msg = T(
+            string.IsNullOrWhiteSpace(_lastJoinName)
+                ? Localization.T("Roblox closed. Rejoin in # s?").Replace("#", initialSeconds.ToString())
+                : Localization.T("Roblox closed. Rejoin # in # s?").Replace("#", _lastJoinName).Replace("#", initialSeconds.ToString()),
+            13, (Brush)FindResource("Muted"), false, 6);
+        msg.TextWrapping = TextWrapping.Wrap;
+        panel.Children.Add(msg);
+
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
+        var rejoin = Btn(Localization.T("Rejoin now"), true, 150);
+        var cancel = Btn(Localization.T("Cancel"), false, 110);
+        cancel.Margin = new Thickness(10, 0, 0, 0);
+        btnRow.Children.Add(rejoin);
+        btnRow.Children.Add(cancel);
+        panel.Children.Add(btnRow);
+
+        dlg.Content = panel;
+
+        int left = initialSeconds;
+        var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        void DoRejoin()
+        {
+            t.Stop();
+            var g = new HubGame { PlaceId = _lastJoinPlaceId, Name = _lastJoinName };
+            _rejoinWindow = null;
+            dlg.Close();
+            RobloxLauncher.LogDebug(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NaxiBootstrap", "play_debug.log"), $"Auto-rejoin: place {_lastJoinPlaceId}");
+            LaunchGame(g);
+        }
+        rejoin.Click += (_, _) => DoRejoin();
+        cancel.Click += (_, _) => { t.Stop(); _rejoinWindow = null; dlg.Close(); };
+        dlg.Closed += (_, _) => t.Stop();
+        t.Tick += (_, _) =>
+        {
+            left--;
+            if (left <= 0) { DoRejoin(); return; }
+            msg.Text = string.IsNullOrWhiteSpace(_lastJoinName)
+                ? Localization.T("Roblox closed. Rejoin in # s?").Replace("#", left.ToString())
+                : Localization.T("Roblox closed. Rejoin # in # s?").Replace("#", _lastJoinName).Replace("#", left.ToString());
+        };
+        t.Start();
+
+        dlg.Loaded += (_, _) =>
+        {
+            dlg.BeginAnimation(Window.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
+            var sc = new ScaleTransform(0.92, 0.92);
+            dlg.RenderTransform = sc;
+            sc.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.92, 1, TimeSpan.FromMilliseconds(200)) { EasingFunction = EaseOut() });
+            sc.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.92, 1, TimeSpan.FromMilliseconds(200)) { EasingFunction = EaseOut() });
+        };
+        return dlg;
+    }
+
+    private void ShowNewFolderDialog() => ShowPromptDialog(Localization.T("New folder"), "", Localization.T("Create"), name =>
+    {
+        _config.GameFolders.Add(new GameFolder { Name = name });
+        RobloxLauncher.SaveConfig(_config);
+        _ghFolderFilter = name;
+        RebuildFolderBar();
+        ApplyHubView();
+    });
+
+    private void ShowNewFolderDialogFor(HubGame game) => ShowPromptDialog(Localization.T("New folder"), "", Localization.T("Create"), name =>
+    {
+        var f = new GameFolder { Name = name };
+        f.PlaceIds.Add(game.PlaceId);
+        _config.GameFolders.Add(f);
+        RobloxLauncher.SaveConfig(_config);
+        _ghFolderFilter = name;
+        RebuildFolderBar();
+        ApplyHubView();
+    });
+
+    private void RenameFolderDialog(string oldName) => ShowPromptDialog(Localization.T("Rename"), oldName, Localization.T("Save"), name =>
+    {
+        var f = _config.GameFolders.FirstOrDefault(x => x.Name == oldName);
+        if (f == null) return;
+        f.Name = name;
+        RobloxLauncher.SaveConfig(_config);
+        if (_ghFolderFilter == oldName) _ghFolderFilter = name;
+        RebuildFolderBar();
+        ApplyHubView();
+    });
+
+    private void DeleteFolder(string name)
+    {
+        var r = MessageBox.Show(this,
+            Localization.T("Delete folder") + " \"" + name + "\"?\n" + Localization.T("Games in it will stay in your library."),
+            "Naxi Bootstrap", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (r != MessageBoxResult.Yes) return;
+        _config.GameFolders.RemoveAll(x => x.Name == name);
+        RobloxLauncher.SaveConfig(_config);
+        if (_ghFolderFilter == name) _ghFolderFilter = null;
+        RebuildFolderBar();
+        ApplyHubView();
+    }
+
+    private void ShowAddToFolderMenu(HubGame game, FrameworkElement anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var f in _config.GameFolders)
+        {
+            var fLocal = f;
+            var mi = new MenuItem
+            {
+                Header = f.Name,
+                IsChecked = f.PlaceIds.Contains(game.PlaceId),
+                Icon = new TextBlock { Text = "\uE8B7", FontFamily = NavIconFont, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Accent") }
+            };
+            mi.Click += (_, _) =>
+            {
+                if (fLocal.PlaceIds.Contains(game.PlaceId)) fLocal.PlaceIds.Remove(game.PlaceId);
+                else fLocal.PlaceIds.Add(game.PlaceId);
+                RobloxLauncher.SaveConfig(_config);
+                RebuildFolderBar();
+                ApplyHubView();
+            };
+            menu.Items.Add(mi);
+        }
+
+        if (_config.GameFolders.Count > 0) menu.Items.Add(new Separator());
+        var containing = _config.GameFolders.Where(x => x.PlaceIds.Contains(game.PlaceId)).ToList();
+        if (containing.Count > 0)
+        {
+            var rem = new MenuItem { Header = Localization.T("Remove from folder") };
+            rem.Click += (_, _) =>
+            {
+                foreach (var f in containing) f.PlaceIds.Remove(game.PlaceId);
+                RobloxLauncher.SaveConfig(_config);
+                RebuildFolderBar();
+                ApplyHubView();
+            };
+            menu.Items.Add(rem);
+        }
+        var newMi = new MenuItem { Header = Localization.T("New folder") };
+        newMi.Click += (_, _) => ShowNewFolderDialogFor(game);
+        menu.Items.Add(newMi);
+        menu.IsOpen = true;
+    }
+
+    private async Task RefreshGameHubStatusAsync()
+    {
+        var dot = _ghStatusDot;
+        var txt = _ghStatusText;
+        if (dot == null || txt == null) return;
+        var status = await GameHubService.GetStatusAsync();
+        if (status == null)
+        {
+            SetGhDot(dot, Color.FromRgb(0x8A, 0x90, 0x99), glow: false);
+            txt.Text = Localization.T("Could not check status");
+            return;
+        }
+        var color = status.Indicator switch
+        {
+            "none" => Color.FromRgb(0x46, 0xD0, 0x7C),
+            "maintenance" => Color.FromRgb(0x7C, 0xB7, 0xE0),
+            "minor" => Color.FromRgb(0xE8, 0xC8, 0x60),
+            "major" => Color.FromRgb(0xE8, 0x6A, 0x6A),
+            _ => Color.FromRgb(0x8A, 0x90, 0x99)
+        };
+        SetGhDot(dot, color, glow: status.Indicator != "unknown");
+        txt.Text = status.Description.Length > 0 ? status.Description : status.Indicator;
+    }
+    private static void SetGhDot(Ellipse dot, Color c, bool glow)
+    {
+        dot.Fill = new SolidColorBrush(c);
+        dot.Effect = glow
+            ? new System.Windows.Media.Effects.DropShadowEffect { Color = c, BlurRadius = 9, ShadowDepth = 0, Opacity = 0.85 }
+            : null;
+    }
+
+    private async Task RefreshGameHubPingAsync()
+    {
+        var value = _ghPingValue;
+        var sub = _ghPingSub;
+        if (value == null || sub == null) return;
+        var res = await GameHubService.PingRobloxAsync(deep: HasPro);
+        if (res == null)
+        {
+            value.Text = "—";
+            value.Foreground = (Brush)FindResource("Muted");
+            value.Effect = null;
+            sub.Text = Localization.T("Ping to Roblox servers");
+            sub.Foreground = (Brush)FindResource("Muted");
+            return;
+        }
+        value.Text = $"{res.Ms} ms";
+        var c = res.Ms < 45 ? Color.FromRgb(0x46, 0xD0, 0x7C)
+            : res.Ms < 100 ? Color.FromRgb(0xE8, 0xC8, 0x60)
+            : Color.FromRgb(0xE8, 0x6A, 0x6A);
+        value.Foreground = new SolidColorBrush(c);
+        if (res.Deep)
+        {
+            value.Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = c, BlurRadius = 12, ShadowDepth = 0, Opacity = 0.8 };
+            sub.Text = Localization.T("Pro deep scan · best of # nodes").Replace("#", res.Nodes.ToString());
+            sub.Foreground = (Brush)FindResource("Accent");
+        }
+        else
+        {
+            value.Effect = null;
+            sub.Text = Localization.T("Ping to Roblox servers");
+            sub.Foreground = (Brush)FindResource("Muted");
+        }
+    }
+
+    private static string FormatGameCount(long n)
+    {
+        if (n >= 1_000_000_000) return (n / 1_000_000_000.0).ToString("0.#", CultureInfo.InvariantCulture) + "B";
+        if (n >= 1_000_000) return (n / 1_000_000.0).ToString("0.#", CultureInfo.InvariantCulture) + "M";
+        if (n >= 1_000) return (n / 1_000.0).ToString("0.#", CultureInfo.InvariantCulture) + "K";
+        return n.ToString("N0", CultureInfo.InvariantCulture);
     }
 
     private Grid BuildLegal()

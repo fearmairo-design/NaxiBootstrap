@@ -17,8 +17,10 @@ internal class SplashWindow : Window
 
     public SplashWindow()
     {
-        var cfgFont = RobloxLauncher.LoadConfig().FontName;
+        var cfg = RobloxLauncher.LoadConfig();
+        var cfgFont = cfg.FontName;
         if (!string.IsNullOrWhiteSpace(cfgFont)) FontFamily = new FontFamily(cfgFont);
+        var isMax = cfg.IsMax; var pro = cfg.IsPro || isMax;
         Width = 480;
         Height = 150;
         WindowStyle = WindowStyle.None;
@@ -34,16 +36,45 @@ internal class SplashWindow : Window
             CornerRadius = new CornerRadius(9),
             VerticalAlignment = VerticalAlignment.Center
         };
-        logo.Background = new LinearGradientBrush
+        if (isMax)
         {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(1, 1),
-            GradientStops =
+            logo.Background = new LinearGradientBrush
             {
-                new GradientStop(Color.FromRgb(143, 208, 240), 0),
-                new GradientStop(Color.FromRgb(74, 140, 178), 1)
-            }
-        };
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromRgb(139, 92, 246), 0),
+                    new GradientStop(Color.FromRgb(91, 33, 182), 1)
+                }
+            };
+        }
+        else if (pro)
+        {
+            logo.Background = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromRgb(231, 200, 119), 0),
+                    new GradientStop(Color.FromRgb(192, 150, 63), 1)
+                }
+            };
+        }
+        else
+        {
+            logo.Background = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromRgb(143, 208, 240), 0),
+                    new GradientStop(Color.FromRgb(74, 140, 178), 1)
+                }
+            };
+        }
         logo.Child = new TextBlock
         {
             Text = "N",
@@ -58,7 +89,7 @@ internal class SplashWindow : Window
         head.Children.Add(logo);
         head.Children.Add(new TextBlock
         {
-            Text = "Naxi Bootstrap",
+            Text = isMax ? "Launching NaxiBootstrap MAX" : pro ? "Launching Naxi Bootstrap PRO" : "Naxi Bootstrap",
             FontSize = 17,
             FontWeight = FontWeights.SemiBold,
             Foreground = new SolidColorBrush(Color.FromRgb(242, 242, 242)),

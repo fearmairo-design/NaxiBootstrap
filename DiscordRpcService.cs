@@ -15,6 +15,10 @@ internal static class DiscordRpcService
 
     public static bool IsRunning => _pipe != null && _pipe.IsConnected;
 
+    // Naxi MAX: when set, Rich Presence shows the live Roblox game instead of
+    // the user's custom text. Null = custom fields behave as before.
+    public static string? AutoGameName;
+
     public static void Start(AppConfig cfg)
     {
         Stop();
@@ -90,8 +94,16 @@ internal static class DiscordRpcService
         {
             var activity = new Dictionary<string, object?>();
             // map from your C++ snippet: details = Competitive, state = Playing Solo, but use config values
-            if (!string.IsNullOrWhiteSpace(cfg.DiscordRpcDetails)) activity["details"] = cfg.DiscordRpcDetails;
-            if (!string.IsNullOrWhiteSpace(cfg.DiscordRpcState)) activity["state"] = cfg.DiscordRpcState;
+            if (AutoGameName != null)
+            {
+                activity["details"] = "🎮 " + AutoGameName;
+                activity["state"] = "via Naxi Bootstrap";
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(cfg.DiscordRpcDetails)) activity["details"] = cfg.DiscordRpcDetails;
+                if (!string.IsNullOrWhiteSpace(cfg.DiscordRpcState)) activity["state"] = cfg.DiscordRpcState;
+            }
             if (cfg.DiscordRpcShowElapsed) activity["timestamps"] = new Dictionary<string, object> { ["start"] = _startTimestamp };
             // do not send assets unless they exist in dev portal — empty assets is safer for button display
             if (!string.IsNullOrWhiteSpace(cfg.DiscordRpcLargeImage) && cfg.DiscordRpcLargeImage.Trim().ToLower() != "naxi")

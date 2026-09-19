@@ -1,0 +1,10 @@
+# Project rules — NaxiBootstrap
+
+## After finishing ANY work session (always)
+1. Rebuild the release exe:
+   `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true`
+2. Sign it with the project script: `powershell -File sign.ps1`
+3. Replace the desktop copy `C:\Users\skazk\Desktop\NaxiBootstrap.exe` with the freshly published exe:
+   - If the app is running, stop the process (NaxiBootstrap) first, then copy, then start the new exe again.
+   - Source: `bin\Release\net8.0-windows\win-x64\publish\NaxiBootstrap.exe`
+4. Verify the desktop exe version matches the version in NaxiBootstrap.csproj.

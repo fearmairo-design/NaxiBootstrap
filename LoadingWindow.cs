@@ -20,8 +20,10 @@ internal class LoadingWindow : Window
 
     public LoadingWindow()
     {
-        var cfgFont = RobloxLauncher.LoadConfig().FontName;
+        var cfg = RobloxLauncher.LoadConfig();
+        var cfgFont = cfg.FontName;
         if (!string.IsNullOrWhiteSpace(cfgFont)) FontFamily = new FontFamily(cfgFont);
+        var isMax = cfg.IsMax; var pro = cfg.IsPro || isMax;
         Width = 430;
         Height = 230;
         WindowStyle = WindowStyle.None;
@@ -59,10 +61,36 @@ internal class LoadingWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
+        if (isMax)
+        {
+            logo.Background = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromRgb(139, 92, 246), 0),
+                    new GradientStop(Color.FromRgb(91, 33, 182), 1)
+                }
+            };
+        }
+        else if (cfg.IsPro)
+        {
+            logo.Background = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromRgb(231, 200, 119), 0),
+                    new GradientStop(Color.FromRgb(192, 150, 63), 1)
+                }
+            };
+        }
 
         var title = new TextBlock
         {
-            Text = "Naxi Bootstrap",
+            Text = isMax ? "Launching NaxiBootstrap MAX" : pro ? "Launching Naxi Bootstrap PRO" : "Naxi Bootstrap",
             FontSize = 19,
             FontWeight = FontWeights.SemiBold,
             Foreground = new SolidColorBrush(Color.FromRgb(242, 242, 242)),

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Naxi Bootstrap" Width="1200" Height="760" MinWidth="1024" MinHeight="660"
         WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True" Background="Transparent" WindowStartupLocation="CenterScreen">
-    <Border Background="{StaticResource Bg}" CornerRadius="14" BorderBrush="#1C2028" BorderThickness="1" ClipToBounds="True">
+    <Border Background="{DynamicResource Bg}" CornerRadius="14" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1" ClipToBounds="True">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -33,18 +33,19 @@
 
             <Grid Grid.Row="0" Margin="28,18,18,0" MouseLeftButtonDown="DragWindow">
                 <StackPanel Orientation="Horizontal">
-                    <Border Width="28" Height="28" CornerRadius="9" VerticalAlignment="Center" Margin="0,0,16,0" BorderBrush="#4A7A96" BorderThickness="1">
+                    <Border x:Name="LogoBadge" Width="28" Height="28" CornerRadius="9" VerticalAlignment="Center" Margin="0,0,16,0" BorderBrush="{DynamicResource AccentB}" BorderThickness="1">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#8FC4EA" Offset="0"/>
-                                <GradientStop Color="#5E9CC8" Offset="1"/>
+                                <GradientStop Color="{DynamicResource AccentLightC}" Offset="0"/>
+                                <GradientStop Color="{DynamicResource AccentDarkC}" Offset="1"/>
                             </LinearGradientBrush>
                         </Border.Background>
                         <TextBlock Text="N" FontSize="14" FontWeight="Bold" Foreground="#0A1420" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <Border Background="#12151B" BorderBrush="#20252E" BorderThickness="1" CornerRadius="20" Padding="5" VerticalAlignment="Center">
+                    <Border Background="{DynamicResource NavShellBg}" BorderBrush="{DynamicResource NavShellBorder}" BorderThickness="1" CornerRadius="20" Padding="5" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
                             <Button x:Name="HomeNav" Content="Home" Style="{StaticResource NavButtonActive}" Click="Home_Click"/>
+                            <Button x:Name="GamesNav" Content="Games" Style="{StaticResource NavButton}" Click="Games_Click"/>
                             <Button x:Name="NewsNav" Content="News" Style="{StaticResource NavButton}" Click="News_Click"/>
                             <Button x:Name="AccountsNav" Content="Accounts" Style="{StaticResource NavButton}" Click="Accounts_Click"/>
                             <Button x:Name="FlagsNav" Content="FastFlags" Style="{StaticResource NavButton}" Click="Flags_Click"/>
@@ -52,6 +53,7 @@
                             <Button x:Name="EmotesNav" Content="Emotes" Style="{StaticResource NavButton}" Click="Emotes_Click"/>
                             <Button x:Name="MaintenanceNav" Content="Maintenance" Style="{StaticResource NavButton}" Click="Maintenance_Click"/>
                             <Button x:Name="SettingsNav" Content="Settings" Style="{StaticResource NavButton}" Click="Settings_Click"/>
+                            <Button x:Name="ProNav" Content="Pro" Style="{StaticResource NavButton}" Click="Pro_Click"/>
                             <Button x:Name="AboutNav" Content="About us" Style="{StaticResource NavButton}" Click="About_Click"/>
                             <Button x:Name="LegalNav" Content="Legal" Style="{StaticResource NavButton}" Click="Legal_Click"/>
                         </StackPanel>

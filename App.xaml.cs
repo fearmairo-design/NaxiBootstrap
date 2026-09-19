@@ -14,6 +14,7 @@ public partial class App : Application
 {
     [DllImport("kernel32.dll")] static extern bool IsDebuggerPresent();
 
+
     public App()
     {
         try
@@ -118,7 +119,6 @@ public partial class App : Application
             HandleProtocolLaunch(url);
             return;
         }
-
         StartApp();
     }
 
@@ -135,7 +135,18 @@ public partial class App : Application
         await Task.Delay(300);
 
         loading.SetProgress(50, "Построение интерфейса...");
-        var main = new MainWindow();
+        MainWindow main;
+        try
+        {
+            main = new MainWindow();
+        }
+        catch (Exception ex)
+        {
+            loading.FadeOut();
+            MessageBox.Show(ex.ToString(), "Naxi Bootstrap - startup error", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
         await Task.Delay(400);
 
         loading.SetProgress(80, "Проверка обновлений...");
@@ -161,7 +172,7 @@ public partial class App : Application
         splash.SetStatus(string.IsNullOrWhiteSpace(place) ? "Запускаем Roblox..." : $"Открываем {place}");
 
         await Task.Delay(500);
-        RobloxLauncher.LaunchFromUrl(url, config);
+        await RobloxLauncher.LaunchFromUrlAsync(url, config);
         await Task.Delay(1800);
         splash.Close();
         Shutdown();
